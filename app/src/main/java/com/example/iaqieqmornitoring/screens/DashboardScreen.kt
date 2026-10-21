@@ -27,28 +27,8 @@ fun DashboardScreen(nav: NavController) {
     val light = sensor.light
     val sound = sensor.sound
 
-    // 🔥 IAQ CALC
-    val tempScore = calculateIAQPercentage(temp, IAQConfig.tempRange, isLowGood("TEMP"))
-    val humidityScore = calculateIAQPercentage(humidity, IAQConfig.humidityRange, isLowGood("HUMIDITY"))
-    val co2Score = calculateIAQPercentage(co2, IAQConfig.co2Range, isLowGood("CO2"))
-    val pm25Score = calculateIAQPercentage(pm25, IAQConfig.pm25Range, isLowGood("PM2.5"))
-    val pm10Score = calculateIAQPercentage(pm10, IAQConfig.pm10Range, isLowGood("PM10"))
-    val tvocScore = calculateIAQPercentage(tvoc, IAQConfig.tvocRange, isLowGood("TVOC"))
-    val hchoScore = calculateIAQPercentage(hcho, IAQConfig.hchoRange, isLowGood("HCHO"))
-    val lightScore = calculateIAQPercentage(light, IAQConfig.lightRange, isLowGood("LIGHT"))
-    val soundScore = calculateIAQPercentage(sound, IAQConfig.soundRange, isLowGood("SOUND"))
-
-    val iaq = listOf(
-        tempScore,
-        humidityScore,
-        co2Score,
-        pm25Score,
-        pm10Score,
-        tvocScore,
-        hchoScore,
-        lightScore,
-        soundScore
-    ).average().toInt()
+    // 🔥 IAQ CALC (shared with the mission engine)
+    val iaq = computeIAQ(sensor)
 
     val ieq = ((temp + humidity) / 2).toInt()
 

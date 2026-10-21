@@ -14,9 +14,22 @@ import androidx.compose.ui.unit.*
 import androidx.navigation.NavController
 import com.example.iaqieqmornitoring.components.StartupCard
 import com.example.iaqieqmornitoring.components.TopBar
+import com.example.iaqieqmornitoring.utils.CheckState
+import com.example.iaqieqmornitoring.utils.overallState
+import com.example.iaqieqmornitoring.utils.rememberStartupChecks
 
 @Composable
 fun StartupScreen(nav: NavController) {
+
+    val checks = rememberStartupChecks()
+    val overall = overallState(checks)
+
+    val (statusText, statusColor) = when (overall) {
+        CheckState.OK -> "READY" to Color(0xFF00FFA3)
+        CheckState.WARN -> "CHECK WARNINGS" to Color(0xFFFFC107)
+        CheckState.FAIL -> "NOT READY" to Color(0xFFFF5252)
+        CheckState.CHECKING -> "CHECKING…" to Color(0xFF94A3B8)
+    }
 
     Box(
         modifier = Modifier
@@ -57,24 +70,15 @@ fun StartupScreen(nav: NavController) {
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // 🔲 GRID
+                // 🔲 GRID (live status of each subsystem)
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(3),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                     modifier = Modifier.height(260.dp)
                 ) {
-                    items(
-                        listOf(
-                            "MQTT Connection",
-                            "Sensor Communication",
-                            "Air Quality Sensors",
-                            "Battery Level",
-                            "Robot Navigation",
-                            "Storage System"
-                        )
-                    ) { title ->
-                        StartupCard(title)
+                    items(checks) { check ->
+                        StartupCard(check.title, check.state, check.detail)
                     }
                 }
 
@@ -105,15 +109,14 @@ fun StartupScreen(nav: NavController) {
 
                         Spacer(modifier = Modifier.height(10.dp))
 
-                        // 🔥 READY + GLOW
                         Text(
-                            text = "READY",
+                            text = statusText,
                             style = TextStyle(
-                                color = Color(0xFF00FFA3),
+                                color = statusColor,
                                 fontSize = 40.sp,
                                 fontWeight = FontWeight.Bold,
                                 shadow = Shadow(
-                                    color = Color(0xFF00FFA3),
+                                    color = statusColor,
                                     blurRadius = 25f
                                 )
                             )
@@ -121,7 +124,7 @@ fun StartupScreen(nav: NavController) {
 
                         Spacer(modifier = Modifier.height(20.dp))
 
-                        // 🔘 BUTTON
+                        // 🔘 BUTTON (always allowed, the checks above explain anything that is off)
                         Button(
                             onClick = { nav.navigate("home") },
                             shape = RoundedCornerShape(14.dp),
@@ -133,7 +136,7 @@ fun StartupScreen(nav: NavController) {
                                 .width(270.dp)
                         ) {
                             Text(
-                                text = "Enter Dashboard",
+                                text = if (overall == CheckState.OK) "Enter Dashboard" else "Enter Anyway",
                                 color = Color.White,
                                 fontSize = 30.sp
                             )

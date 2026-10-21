@@ -25,12 +25,12 @@ fun DetailScreen(
         "CO2" -> sensor.co2
         "PM2.5" -> sensor.pm25
         "PM10" -> sensor.pm10
-        "TEMP" -> sensor.temp
-        "HUMID" -> sensor.humidity
-        "SOUND" -> sensor.sound
+        "TEMP", "Temperature" -> sensor.temp
+        "HUMID", "HUMIDITY", "Humidity" -> sensor.humidity
+        "SOUND", "Sound" -> sensor.sound
         "TVOC" -> sensor.tvoc
         "HCHO" -> sensor.hcho
-        "LIGHT" -> sensor.light
+        "LIGHT", "Light" -> sensor.light
         else -> 0f
     }
 

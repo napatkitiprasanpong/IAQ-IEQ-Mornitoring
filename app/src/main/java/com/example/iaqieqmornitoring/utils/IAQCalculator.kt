@@ -85,3 +85,19 @@ fun calculateOverallIAQ(
 
     return scores.average().toInt()
 }
+
+/** Overall IAQ score (0-100) for one set of readings. Used by the dashboard and by missions. */
+fun computeIAQ(s: SensorData): Int {
+    val scores = listOf(
+        calculateIAQPercentage(s.temp, IAQConfig.tempRange, isLowGood("TEMP")),
+        calculateIAQPercentage(s.humidity, IAQConfig.humidityRange, isLowGood("HUMIDITY")),
+        calculateIAQPercentage(s.co2, IAQConfig.co2Range, isLowGood("CO2")),
+        calculateIAQPercentage(s.pm25, IAQConfig.pm25Range, isLowGood("PM2.5")),
+        calculateIAQPercentage(s.pm10, IAQConfig.pm10Range, isLowGood("PM10")),
+        calculateIAQPercentage(s.tvoc, IAQConfig.tvocRange, isLowGood("TVOC")),
+        calculateIAQPercentage(s.hcho, IAQConfig.hchoRange, isLowGood("HCHO")),
+        calculateIAQPercentage(s.light, IAQConfig.lightRange, isLowGood("LIGHT")),
+        calculateIAQPercentage(s.sound, IAQConfig.soundRange, isLowGood("SOUND"))
+    )
+    return scores.average().toInt()
+}

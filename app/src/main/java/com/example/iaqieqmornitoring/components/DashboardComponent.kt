@@ -29,6 +29,11 @@ import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.WindPower
 import androidx.compose.material3.Text
 import com.example.iaqieqmornitoring.utils.IAQConfig
+import com.example.iaqieqmornitoring.utils.AppSettings
+import com.example.iaqieqmornitoring.utils.MissionManager
+import com.example.iaqieqmornitoring.utils.MissionStatus
+import com.example.iaqieqmornitoring.utils.TemiRepository
+import androidx.compose.ui.text.style.TextOverflow
 
 @Composable
 fun MissionPanel(
@@ -36,8 +41,33 @@ fun MissionPanel(
     onStartMission: () -> Unit = {}
 ) {
 
-    var selectedRoute by remember { mutableStateOf("Route A") }
-    var isRunning by remember { mutableStateOf(false) }
+    val routes by AppSettings.routes.collectAsState()
+    val selected by AppSettings.selectedRoute.flow.collectAsState()
+    val dwell by AppSettings.dwellSeconds.flow.collectAsState()
+    val mission by MissionManager.state.collectAsState()
+    val robot by TemiRepository.state.collectAsState()
+
+    val route = routes.firstOrNull { it.name == selected } ?: routes.firstOrNull()
+    val running = mission.isActive
+    val canStart = route != null && route.waypoints.isNotEmpty() && robot.ready
+
+    val statusColor = when {
+        running -> Color(0xFF00FFA3)
+        mission.status == MissionStatus.FAILED -> Color(0xFFFF5252)
+        else -> Color.Gray
+    }
+    val statusText = when {
+        running -> "Running"
+        mission.status == MissionStatus.COMPLETED -> "Completed"
+        mission.status == MissionStatus.STOPPED -> "Stopped"
+        mission.status == MissionStatus.FAILED -> "Failed"
+        else -> "Idle"
+    }
+    val robotText = when {
+        robot.simulated -> "Simulated robot"
+        robot.ready -> "temi connected"
+        else -> "temi not connected"
+    }
 
     Card(
         modifier = modifier,
@@ -48,7 +78,7 @@ fun MissionPanel(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp),
+                .padding(16.dp),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
 
@@ -61,112 +91,85 @@ fun MissionPanel(
                     fontWeight = FontWeight.Bold
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // 🔽 ROUTE SELECT (UI แบบ button)
                 Text("Inspection Route", color = Color.Gray, fontSize = 13.sp)
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                DarkDropdown(
+                    selected = route?.name ?: "",
+                    options = routes.map { it.name },
+                    onSelect = { AppSettings.selectedRoute.set(it) },
+                    enabled = !running
+                )
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                var expanded by remember { mutableStateOf(false) }
-                val routes = listOf("Route A", "Route B", "Route C")
-
-                Box {
-
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF111827), RoundedCornerShape(12.dp))
-                            .clickable { expanded = true }
-                            .padding(12.dp)
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(selectedRoute, color = Color.White)
-
-                            Icon(
-                                imageVector = Icons.Default.ArrowDropDown,
-                                contentDescription = null,
-                                tint = Color.Gray
-                            )
-                        }
-                    }
-
-                    DropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false },
-                        modifier = Modifier.background(Color(0xFF0B1220))
-                    ) {
-                        routes.forEach { route ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(route, color = Color.White)
-                                },
-                                onClick = {
-                                    selectedRoute = route
-                                    expanded = false
-                                }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
                 Text(
-                    "3 locations • ~15 min",
+                    if (route == null || route.waypoints.isEmpty()) "No locations — set up in Settings"
+                    else "${route.waypoints.size} locations • ${dwell}s per stop",
                     color = Color(0xFF94A3B8),
                     fontSize = 12.sp
                 )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                // 🔥 STATUS แบบมี dot
                 Row(verticalAlignment = Alignment.CenterVertically) {
 
                     Box(
                         modifier = Modifier
                             .size(8.dp)
-                            .background(
-                                if (isRunning) Color(0xFF00FFA3) else Color.Gray,
-                                CircleShape
-                            )
+                            .background(statusColor, CircleShape)
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))
 
                     Text(
-                        text = if (isRunning) "Running" else "Idle",
-                        color = if (isRunning) Color(0xFF00FFA3) else Color.Gray,
-                        fontSize = 14.sp
+                        text = "$statusText · $robotText",
+                        color = statusColor,
+                        fontSize = 13.sp,
+                        maxLines = 1
+                    )
+                }
+
+                val note = mission.error ?: if (mission.status == MissionStatus.IDLE) null else mission.message
+                if (note != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        note,
+                        color = if (mission.error != null) Color(0xFFFF5252) else Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
 
-            // 🔥 BUTTON แบบดูเป็น action จริง
             Button(
                 onClick = {
-                    isRunning = !isRunning
-                    onStartMission()
+                    if (running) {
+                        MissionManager.stop()
+                    } else if (route != null) {
+                        MissionManager.start(route.name)
+                        onStartMission()
+                    }
                 },
+                enabled = running || canStart,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(46.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isRunning)
-                        Color(0xFFEF4444)
-                    else
-                        Color(0xFF10B981)
+                    containerColor = if (running) Color(0xFFEF4444) else Color(0xFF10B981),
+                    disabledContainerColor = Color(0xFF1F2937)
                 )
             ) {
 
                 Text(
-                    text = if (isRunning) "Stop Mission" else "Start Mission",
+                    text = if (running) "Stop Mission" else "Start Mission",
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = if (running || canStart) Color.White else Color.Gray
                 )
             }
         }

@@ -16,6 +16,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector // ✅ สำคัญมาก
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import com.example.iaqieqmornitoring.utils.CheckState
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.iaqieqmornitoring.utils.IAQConfig
@@ -166,56 +168,81 @@ fun AnalyticsCard(
     }
 }
 
-    // -------------------- STARTUP CARD --------------------
-    @Composable
-    fun StartupCard(title: String) {
+// -------------------- STARTUP CARD --------------------
+@Composable
+fun StartupCard(
+    title: String,
+    state: CheckState = CheckState.OK,
+    detail: String = "Ready"
+) {
+    val color = when (state) {
+        CheckState.OK -> Color(0xFF00FFA3)
+        CheckState.WARN -> Color(0xFFFFC107)
+        CheckState.FAIL -> Color(0xFFFF5252)
+        CheckState.CHECKING -> Color(0xFF94A3B8)
+    }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF0B1220)),
-            elevation = CardDefaults.cardElevation(6.dp),
-            border = BorderStroke(1.dp, Color(0xFF1E293B))
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF0B1220)),
+        elevation = CardDefaults.cardElevation(6.dp),
+        border = BorderStroke(1.dp, Color(0xFF1E293B))
+    ) {
+
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
 
             Row(
-                modifier = Modifier
-                    .padding(16.dp)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
             ) {
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-
-                    Icon(
-                        imageVector = getIcon(title),
-                        contentDescription = null,
-                        tint = Color(0xFF94A3B8),
-                        modifier = Modifier.size(35.dp)
-                    )
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Column {
-                        Text(title, color = Color.White, fontSize = 20.sp)
-                        Text("Ready", color = Color(0xFF00FFA3), fontSize = 18.sp)
-                    }
-                }
-
-                Box(
-                    modifier = Modifier
-                        .size(12.dp)
-                        .background(Color(0xFF00FFA3), CircleShape)
-                        .shadow(
-                            8.dp,
-                            CircleShape,
-                            ambientColor = Color(0xFF00FFA3),
-                            spotColor = Color(0xFF00FFA3)
-                        )
+                Icon(
+                    imageVector = getIcon(title),
+                    contentDescription = null,
+                    tint = Color(0xFF94A3B8),
+                    modifier = Modifier.size(35.dp)
                 )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                Column {
+                    Text(
+                        title,
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        detail,
+                        color = color,
+                        fontSize = 14.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .background(color, CircleShape)
+                    .shadow(
+                        8.dp,
+                        CircleShape,
+                        ambientColor = color,
+                        spotColor = color
+                    )
+            )
         }
     }
-
-
+}

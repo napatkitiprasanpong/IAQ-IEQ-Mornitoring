@@ -56,9 +56,17 @@ fun MiniGauge(
         // 🔥 TEXT ซ้อนในเกจ (ไม่ใช่ Canvas)
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
 
-            MiniGauge(
-                value = percent,
-                label = label
+            Text(
+                text = "${percent.roundToInt()}%",
+                color = Color.White,
+                fontSize = 20.sp
+            )
+
+            Text(
+                text = label,
+                color = Color.Gray,
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center
             )
         }
     }

@@ -75,13 +75,13 @@ fun IAQIScaleScreen(nav: NavController) {
                 item { PollutantCard("HUMID","%", listOf("<30","30-50","50-70","70-85",">85"), listOf(30f,50f,70f,85f), sensor.humidity) }
                 item { PollutantCard("CO2","ppm", listOf("<400","400-600","600-1000","1000-2500",">2500"), listOf(400f,600f,1000f,2500f), sensor.co2) }
 
-                item { PollutantCard("PM2.5","µg/m³", listOf("<12","12-35","35-55","55-150",">150"), listOf(12f,35f,55f,150f), 25f) }
-                item { PollutantCard("PM10","µg/m³", listOf("<20","20-50","50-100","100-200",">200"), listOf(20f,50f,100f,200f), 78f) }
-                item { PollutantCard("TVOC","mg/m³", listOf("<0.3","0.3-0.5","0.5-1.0","1.0-3.0",">3.0"), listOf(0.3f,0.5f,1f,3f), 61f) }
+                item { PollutantCard("PM2.5","µg/m³", listOf("<12","12-35","35-55","55-150",">150"), listOf(12f,35f,55f,150f), sensor.pm25) }
+                item { PollutantCard("PM10","µg/m³", listOf("<20","20-50","50-100","100-200",">200"), listOf(20f,50f,100f,200f), sensor.pm10) }
+                item { PollutantCard("TVOC","mg/m³", listOf("<0.3","0.3-0.5","0.5-1.0","1.0-3.0",">3.0"), listOf(0.3f,0.5f,1f,3f), sensor.tvoc) }
 
-                item { PollutantCard("HCHO","mg/m³", listOf("<0.03","0.03-0.05","0.05-0.10","0.10-0.20",">0.20"), listOf(0.03f,0.05f,0.10f,0.20f), 0f) }
-                item { PollutantCard("LIGHT","lux", listOf("<100","100-300","300-500","500-1000",">1000"), listOf(100f,300f,500f,1000f), 399f) }
-                item { PollutantCard("SOUND","dB", listOf("<30","30-50","50-70","70-90",">90"), listOf(30f,50f,70f,90f), 0f) }
+                item { PollutantCard("HCHO","mg/m³", listOf("<0.03","0.03-0.05","0.05-0.10","0.10-0.20",">0.20"), listOf(0.03f,0.05f,0.10f,0.20f), sensor.hcho) }
+                item { PollutantCard("LIGHT","lux", listOf("<100","100-300","300-500","500-1000",">1000"), listOf(100f,300f,500f,1000f), sensor.light) }
+                item { PollutantCard("SOUND","dB", listOf("<30","30-50","50-70","70-90",">90"), listOf(30f,50f,70f,90f), sensor.sound) }
             }
         }
     }

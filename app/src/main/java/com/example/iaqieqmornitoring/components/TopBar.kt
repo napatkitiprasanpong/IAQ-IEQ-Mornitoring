@@ -9,6 +9,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import com.example.iaqieqmornitoring.utils.SensorRepository
+import com.example.iaqieqmornitoring.utils.TemiRepository
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.res.painterResource
@@ -18,10 +26,16 @@ import androidx.compose.ui.unit.*
 import com.example.iaqieqmornitoring.R
 
 // =======================
-// 🔥 TIME CHIP (UPGRADED)
+// 🕒 TIME CHIP - time of the last sensor update
 // =======================
 @Composable
 fun TimeChip() {
+    val sensor by SensorRepository.data.collectAsState()
+    val text = remember(sensor.timestampMs) {
+        if (sensor.timestampMs == 0L) "--:--:--"
+        else SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(sensor.timestampMs))
+    }
+
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -56,7 +70,7 @@ fun TimeChip() {
                 )
 
                 Text(
-                    "14:45:30",
+                    text,
                     color = Color.White,
                     fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold
@@ -67,10 +81,26 @@ fun TimeChip() {
 }
 
 // =======================
-// 🔋 BATTERY CHIP (UPGRADED)
+// 🔋 BATTERY CHIP - temi's battery
 // =======================
 @Composable
 fun BatteryChip() {
+    val robot by TemiRepository.state.collectAsState()
+    val pct = robot.batteryPercent
+
+    val tint = when {
+        pct == null -> Color(0xFF64748B)
+        pct < 15 -> Color(0xFFFF5252)
+        pct < 30 -> Color(0xFFFFC107)
+        else -> Color(0xFF00FFAA)
+    }
+    val icon = when {
+        robot.charging -> Icons.Default.BatteryChargingFull
+        pct == null -> Icons.Default.BatteryUnknown
+        pct < 15 -> Icons.Default.BatteryAlert
+        else -> Icons.Default.BatteryFull
+    }
+
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -89,16 +119,16 @@ fun BatteryChip() {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = Icons.Default.BatteryFull,
+                imageVector = icon,
                 contentDescription = null,
-                tint = Color(0xFF00FFAA), // 🔥 เขียวให้เข้ากับ READY
+                tint = tint,
                 modifier = Modifier.size(26.dp)
             )
 
             Spacer(modifier = Modifier.width(6.dp))
 
             Text(
-                "92%",
+                if (pct == null) "--%" else "$pct%",
                 color = Color.White,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.SemiBold
