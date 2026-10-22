@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "IAQ & IEQ Mornitoring"
+rootProject.name = "leslieornot-test"
 include(":app")
  

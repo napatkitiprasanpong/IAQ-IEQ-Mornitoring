@@ -3,7 +3,10 @@ package com.example.iaqieqmornitoring.utils
 import android.content.pm.ActivityInfo
 import android.os.Handler
 import android.os.Looper
+import com.robotemi.sdk.BatteryData
 import com.robotemi.sdk.Robot
+import com.robotemi.sdk.TtsRequest
+import com.robotemi.sdk.listeners.OnBatteryStatusChangedListener
 import com.robotemi.sdk.listeners.OnGoToLocationStatusChangedListener
 import com.robotemi.sdk.listeners.OnLocationsUpdatedListener
 import com.robotemi.sdk.listeners.OnRobotReadyListener
@@ -56,7 +59,10 @@ data class RobotState(
  * The only class that talks to the temi SDK. Everything else (mission engine, UI) goes through here,
  * so a simulated robot can be used when the app runs on a normal tablet / emulator.
  */
-object TemiRepository : OnRobotReadyListener, OnGoToLocationStatusChangedListener, OnLocationsUpdatedListener {
+object TemiRepository : OnRobotReadyListener,
+    OnGoToLocationStatusChangedListener,
+    OnLocationsUpdatedListener,
+    OnBatteryStatusChangedListener {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -141,6 +147,18 @@ object TemiRepository : OnRobotReadyListener, OnGoToLocationStatusChangedListene
         }
     }
 
+    /** Speaks text using temi TTS engine. */
+    fun speak(text: String, showOnScreen: Boolean = false) {
+        if (text.isBlank()) return
+        if (_state.value.simulated) return
+        try {
+            val request = TtsRequest.create(text, showOnScreen)
+            robotOrNull()?.speak(request)
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
     // -------- temi SDK callbacks --------
 
     override fun onRobotReady(isReady: Boolean) {
@@ -167,6 +185,16 @@ object TemiRepository : OnRobotReadyListener, OnGoToLocationStatusChangedListene
         _state.update { it.copy(locations = locations) }
     }
 
+    override fun onBatteryStatusChanged(batteryData: BatteryData?) {
+        if (batteryData == null) return
+        _state.update { s ->
+            s.copy(
+                batteryPercent = batteryData.level,
+                charging = batteryData.isCharging
+            )
+        }
+    }
+
     // -------- internals --------
 
     private fun robotOrNull(): Robot? = try {
@@ -180,6 +208,7 @@ object TemiRepository : OnRobotReadyListener, OnGoToLocationStatusChangedListene
         robot.addOnRobotReadyListener(this)
         robot.addOnGoToLocationStatusChangedListener(this)
         robot.addOnLocationsUpdatedListener(this)
+        robot.addOnBatteryStatusChangedListener(this)
         listening = true
         pollJob = scope.launch {
             while (isActive) {
@@ -195,6 +224,7 @@ object TemiRepository : OnRobotReadyListener, OnGoToLocationStatusChangedListene
         robot.removeOnRobotReadyListener(this)
         robot.removeOnGoToLocationStatusChangedListener(this)
         robot.removeOnLocationsUpdateListener(this)
+        robot.removeOnBatteryStatusChangedListener(this)
         listening = false
     }
 

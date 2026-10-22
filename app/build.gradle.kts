@@ -9,7 +9,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.iaqieqmornitoring"
+        applicationId = "com.leslie.iaqieqmornitoring"
         minSdk = 23
         targetSdk = 36
         versionCode = 1
@@ -58,7 +58,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     // temi robot SDK (navigation / locations / battery)
-    implementation("com.robotemi:sdk:1.137.1")
+    implementation("com.robotemi:sdk:1.138.0")
 
     // MQTT client for the Raspberry Pi sensor stream
     implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")

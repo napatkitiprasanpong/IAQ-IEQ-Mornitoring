@@ -10,8 +10,14 @@ import com.example.iaqieqmornitoring.ui.theme.IAQIEQMornitoringTheme
 import com.example.iaqieqmornitoring.utils.AppSettings
 import com.example.iaqieqmornitoring.utils.SensorRepository
 import com.example.iaqieqmornitoring.utils.TemiRepository
+import com.robotemi.sdk.Robot
+import com.robotemi.sdk.listeners.OnRobotReadyListener
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), OnRobotReadyListener {
+
+    private val robot: Robot?
+        get() = try { Robot.getInstance() } catch (e: Throwable) { null }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -42,6 +48,29 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        robot?.addOnRobotReadyListener(this)
         TemiRepository.onActivityStart()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        robot?.removeOnRobotReadyListener(this)
+    }
+
+    override fun onRobotReady(isReady: Boolean) {
+        if (isReady) {
+            val activityInfo = try {
+                packageManager.getActivityInfo(componentName, PackageManager.GET_META_DATA)
+            } catch (e: Exception) {
+                null
+            }
+            if (activityInfo != null) {
+                try {
+                    robot?.onStart(activityInfo)
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+        }
     }
 }

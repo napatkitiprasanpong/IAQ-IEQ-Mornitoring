@@ -185,7 +185,7 @@ fun TopBar() {
 
                 Column {
                     Text(
-                        "IAQ & IEQ MONITORING",
+                        "leslieornot-test",
                         color = Color.White,
                         fontSize = 45.sp,
                         fontWeight = FontWeight.Bold,

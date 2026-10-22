@@ -128,6 +128,7 @@ object MissionManager {
         var returnNote = ""
 
         try {
+            TemiRepository.speak("Starting inspection route ${route.name}")
             for ((i, location) in route.waypoints.withIndex()) {
                 updateStop(i) { it.copy(outcome = StopOutcome.NAVIGATING) }
                 _state.update { it.copy(currentIndex = i, message = "Going to $location (${i + 1}/$total)") }
@@ -145,6 +146,7 @@ object MissionManager {
 
                 when (val result = nav) {
                     is NavResult.Arrived -> {
+                        TemiRepository.speak("Arrived at $location, sampling air quality")
                         updateStop(i) { it.copy(outcome = StopOutcome.SAMPLING) }
                         for (remaining in dwell downTo 1) {
                             _state.update {
@@ -254,9 +256,14 @@ object MissionManager {
         } else null
 
         val summary = when (status) {
-            MissionStatus.COMPLETED ->
+            MissionStatus.COMPLETED -> {
+                TemiRepository.speak("Inspection mission complete")
                 "Mission complete — $done/${stops.size} stops sampled" + if (failed > 0) ", $failed failed." else "."
-            MissionStatus.STOPPED -> "Mission stopped — $done/${stops.size} stops sampled."
+            }
+            MissionStatus.STOPPED -> {
+                TemiRepository.speak("Inspection mission stopped")
+                "Mission stopped — $done/${stops.size} stops sampled."
+            }
             else -> "Mission failed."
         } + extra
 
