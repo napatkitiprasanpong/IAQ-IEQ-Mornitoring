@@ -20,6 +20,7 @@ An Android app (Kotlin, Jetpack Compose, Material 3) that runs on a **modified t
 | **Dashboard** | Overall IAQ gauge and level, nine sensor cards, and a Mission Control panel. |
 | **Analytics** | Live gauges for every sensor. |
 | **Mission** | Pick a route, start or stop it, and follow progress stop by stop with the readings taken at each one. |
+| **Camera & Depth** | Live view of the tablet camera next to a colour-coded depth map, with distance read-outs (see below). |
 | **Settings** | Robot and mission behaviour, route editor, Raspberry Pi connection, editable IAQ thresholds. |
 | **Startup check** | Live status of the MQTT link, data freshness, sensors reporting, battery, saved locations and storage. |
 | **IAQI scale** | Reference screen with the breakpoint tables and the current values. |
@@ -33,7 +34,7 @@ An Android app (Kotlin, Jetpack Compose, Material 3) that runs on a **modified t
 - Raspberry Pi on the same network as the temi tablet, with an MQTT broker (Mosquitto)
 - Android Studio (recent version), JDK 17+, Android SDK 36
 - App: `minSdk 23`, `targetSdk 36`
-- Dependencies (added in `app/build.gradle.kts`): `com.robotemi:sdk:1.137.1`, `org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5`
+- Dependencies (added in `app/build.gradle.kts`): `com.robotemi:sdk:1.138.0`, `org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5`, CameraX `1.4.2` (`camera-core`, `camera-camera2`, `camera-lifecycle`, `camera-view`)
 
 ## Setup
 
@@ -101,6 +102,18 @@ The exact path is shown on the Mission screen. Columns:
 
 `data_fresh` is `false` if no sensor message arrived in the 15 seconds before the reading was recorded, so stale data can be told apart from real data.
 
+## Camera & Depth tab
+
+The **Camera & Depth** tab in the sidebar shows what temi is looking at.
+
+- **RGB Camera (left):** live preview of the tablet's camera (front camera, or the back camera if there is no front one). Android asks for camera permission the first time the tab opens. *Flip RGB view* un-mirrors the preview.
+- **Depth View (right):** a colour-coded depth map (warm = near, cool = far, dark = no reading) with a crosshair and a distance legend.
+- **Read-outs (bottom):** nearest obstacle in the **Left / Ahead / Right** thirds of the image, the distance at the **Crosshair**, and the share of pixels with a valid depth reading. Distances are measured inside the band between the dashed lines, so the floor is not reported as an obstacle.
+
+**Depth sources.** The app reads depth only from a camera that Android itself exposes as a depth sensor (Camera2 `DEPTH_OUTPUT`, `DEPTH16` frames). If the device exposes none, the Depth View says so and shows no data. The temi SDK has no depth-stream API, and temi's own depth sensors are handled by the robot's navigation computer, so on a temi the depth panel is likely to report *Not available*. To preview the layout without a sensor, switch on **Simulated robot** in Settings: the panel then shows a clearly labelled (amber *SIMULATED*) synthetic scene.
+
+The camera and depth stream only run while the tab is on screen and are released when you leave it or the app goes to the background.
+
 ## IAQ score
 
 Each sensor has four breakpoints that define its five quality bands. Each reading is converted to a 0–100 score, and the **overall IAQ score is the average of the nine scores**. The breakpoints can be edited in **Settings → IAQ Thresholds** (with a reset to defaults).
@@ -134,7 +147,7 @@ The startup screen shows simulated sources in amber so they cannot be mistaken f
 app/src/main/java/com/example/iaqieqmornitoring/
 ├── MainActivity.kt            starts settings, temi and sensor links
 ├── navigation/                screen routes
-├── screens/                   Startup, Dashboard, Analytics, Detail, IAQI scale, Mission, Settings
+├── screens/                   Startup, Dashboard, Analytics, Detail, IAQI scale, Mission, Camera & Depth, Settings
 ├── components/                gauges, cards, top bar, sidebar, shared form widgets
 └── utils/
     ├── AppSettings.kt         persisted settings and routes
@@ -142,6 +155,7 @@ app/src/main/java/com/example/iaqieqmornitoring/
     ├── SensorRepository.kt    current readings, link state, simulator
     ├── PiSensorClient.kt      MQTT client and payload parser
     ├── TemiRepository.kt      the only class that uses the temi SDK (plus simulated robot)
+    ├── DepthCameraSource.kt   depth stream (Camera2 DEPTH16 or simulated), colouring and distance stats
     ├── MissionManager.kt      mission engine and CSV export
     ├── StartupChecks.kt       startup self-checks
     └── IAQCalculator.kt / IAQConfig.kt   scoring
@@ -158,6 +172,9 @@ docs/pi_sensor_publisher_example.py
 | "Robot Navigation" red | The app is not running on a temi, or the temi SDK is not connected. Use the simulated robot for testing elsewhere. |
 | "Robot Navigation" amber: no saved locations | Save locations on temi, then use Settings → Refresh locations from temi. |
 | Mission refuses to start: "Not saved on temi: …" | A route contains a location name that does not exist on the robot's map. Re-pick it in Settings. |
+| Camera & Depth: RGB panel says "No permission" | Allow Camera for the app in Android Settings > Apps, then reopen the tab. |
+| Camera & Depth: Depth View says "Not available" | The device exposes no depth camera to apps (expected on temi). Use *Simulated robot* to preview the view. |
+| Camera & Depth: RGB shows "too many cameras open" | The device cannot run two cameras at once, or another app holds the camera. Close other camera apps. |
 | Stops fail with "timed out" | Raise the navigation timeout, or check for obstacles or a lost map on temi. |
 
 ## Known limitations

@@ -60,6 +60,13 @@ dependencies {
     // temi robot SDK (navigation / locations / battery)
     implementation("com.robotemi:sdk:1.138.0")
 
+    // CameraX: live preview of the tablet camera on the "Camera & Depth" tab
+    val cameraxVersion = "1.4.2"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+
     // MQTT client for the Raspberry Pi sensor stream
     implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")
     testImplementation(libs.junit)

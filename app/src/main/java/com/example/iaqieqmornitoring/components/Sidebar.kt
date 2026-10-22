@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -38,6 +39,7 @@ fun Sidebar(nav: NavController) {
         SidebarItem("home", "Home", Icons.Default.Home, currentRoute, nav)
         SidebarItem("analytics", "Analytics", Icons.Default.BarChart, currentRoute, nav)
         SidebarItem("mission", "Mission", Icons.Default.Navigation, currentRoute, nav)
+        SidebarItem("camera", "Camera & Depth", Icons.Default.Videocam, currentRoute, nav)
         SidebarItem("settings", "Settings", Icons.Default.Settings, currentRoute, nav)
     }
 }
@@ -106,6 +108,8 @@ fun SidebarItem(
             text = title,
             color = textColor,
             fontSize = 16.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal
         )
     }

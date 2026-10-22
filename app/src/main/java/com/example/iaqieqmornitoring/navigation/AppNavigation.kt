@@ -35,6 +35,10 @@ fun AppNavigation() {
             MissionScreen(nav)
         }
 
+        composable("camera") {
+            CameraDepthScreen(nav)
+        }
+
         composable("settings") {
             SettingsScreen(nav)
         }
