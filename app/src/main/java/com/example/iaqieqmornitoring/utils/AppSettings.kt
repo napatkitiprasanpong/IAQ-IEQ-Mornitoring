@@ -55,6 +55,12 @@ object AppSettings {
     val homeBase = Setting("home_base", "home base")
     val returnHome = Setting("return_home", true)
 
+    // ---- raised hand -> temi follows the person (setting keys kept from the earlier wave version) ----
+    val raiseHandFollowEnabled = Setting("wave_follow_enabled", false)
+    val raiseHandFollowSeconds = Setting("wave_follow_seconds", 30)
+    /** Tilt temi's tablet slowly up and down until the camera sees a person. */
+    val findPersonEnabled = Setting("find_person_enabled", false)
+
     // ---- Raspberry Pi sensor link ----
     val simulateSensors = Setting("simulate_sensors", false)
     val mqttHost = Setting("mqtt_host", "raspberrypi.local")
@@ -74,7 +80,7 @@ object AppSettings {
 
         listOf(
             simulateRobot, selectedRoute, dwellSeconds, arrivalTimeoutSeconds, retries,
-            homeBase, returnHome, simulateSensors, mqttHost, mqttPort, mqttTopic, mqttUser, mqttPass
+            homeBase, returnHome, raiseHandFollowEnabled, raiseHandFollowSeconds, findPersonEnabled, simulateSensors, mqttHost, mqttPort, mqttTopic, mqttUser, mqttPass
         ).forEach { it.load(p) }
 
         p.getString(KEY_ROUTES, null)?.let { _routes.value = routesFromJson(it) }

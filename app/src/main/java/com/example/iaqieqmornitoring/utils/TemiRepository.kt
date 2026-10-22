@@ -64,6 +64,9 @@ object TemiRepository : OnRobotReadyListener,
     OnLocationsUpdatedListener,
     OnBatteryStatusChangedListener {
 
+    const val TILT_MIN_DEG = -15
+    const val TILT_MAX_DEG = 45
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -75,6 +78,14 @@ object TemiRepository : OnRobotReadyListener,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     val events: SharedFlow<GoToEvent> = _events.asSharedFlow()
+
+    private val _following = MutableStateFlow(false)
+    /** True while temi is in "be with me" (follow the person) mode started by this app. */
+    val following: StateFlow<Boolean> = _following.asStateFlow()
+
+    private val _tilt = MutableStateFlow(0)
+    /** Last tablet tilt this app commanded, in degrees (positive = camera looks up). */
+    val tiltDegrees: StateFlow<Int> = _tilt.asStateFlow()
 
     private var activityInfo: ActivityInfo? = null
     private var listening = false
@@ -123,6 +134,7 @@ object TemiRepository : OnRobotReadyListener,
     /** Sends the robot to a saved location. Returns false if the command could not be issued. */
     fun goTo(location: String): Boolean {
         if (location.isBlank()) return false
+        _following.value = false
         if (_state.value.simulated) {
             simulateNavigation(location)
             return true
@@ -137,7 +149,51 @@ object TemiRepository : OnRobotReadyListener,
         }
     }
 
+    /**
+     * Tilts the tablet to an absolute angle (positive = up). The angle is limited to
+     * [TILT_MIN_DEG]..[TILT_MAX_DEG], a little inside what temi can do, so the scan never hits the end stops.
+     */
+    fun tiltTo(degrees: Int, speed: Float = 0.5f): Boolean {
+        val d = degrees.coerceIn(TILT_MIN_DEG, TILT_MAX_DEG)
+        if (_state.value.simulated) {
+            _tilt.value = d
+            return true
+        }
+        val robot = robotOrNull() ?: return false
+        if (!_state.value.ready) return false
+        return try {
+            robot.tiltAngle(d, speed)
+            _tilt.value = d
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Starts temi's built-in follow mode: it finds the nearest person and keeps a safe distance. */
+    fun beWithMe(): Boolean {
+        if (_state.value.simulated) {
+            _following.value = true
+            return true
+        }
+        val robot = robotOrNull() ?: return false
+        if (!_state.value.ready) return false
+        return try {
+            robot.beWithMe()
+            _following.value = true
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Ends follow mode (no-op if temi is not following). */
+    fun stopFollowing() {
+        if (_following.value) stopMovement()
+    }
+
     fun stopMovement() {
+        _following.value = false
         simNavJob?.cancel()
         if (_state.value.simulated) return
         try {

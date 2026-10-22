@@ -67,6 +67,9 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
 
+    // ONNX Runtime: runs the MoveNet pose model (assets/movenet_lightning.onnx) for wave detection
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.3")
+
     // MQTT client for the Raspberry Pi sensor stream
     implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5")
     testImplementation(libs.junit)

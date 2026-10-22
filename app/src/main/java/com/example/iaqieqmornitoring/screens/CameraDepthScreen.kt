@@ -6,7 +6,9 @@ import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.CameraState
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -45,7 +47,13 @@ import com.example.iaqieqmornitoring.utils.AppSettings
 import com.example.iaqieqmornitoring.utils.DepthCameraSource
 import com.example.iaqieqmornitoring.utils.DepthFrame
 import com.example.iaqieqmornitoring.utils.DepthStatus
+import com.example.iaqieqmornitoring.utils.GestureState
+import com.example.iaqieqmornitoring.utils.Kp
+import com.example.iaqieqmornitoring.utils.PoseResult
+import com.example.iaqieqmornitoring.utils.TemiRepository
+import com.example.iaqieqmornitoring.utils.GestureEngine
 import java.util.Locale
+import java.util.concurrent.Executors
 
 private val PanelColor = Color(0xFF0B1220)
 private val SlateText = Color(0xFF94A3B8)
@@ -64,6 +72,15 @@ fun CameraDepthScreen(nav: NavController) {
 
     val simulate by AppSettings.simulateRobot.flow.collectAsState()
     val depth by DepthCameraSource.state.collectAsState()
+    val gesture by GestureEngine.state.collectAsState()
+    val following by TemiRepository.following.collectAsState()
+    val raiseHandFollow by AppSettings.raiseHandFollowEnabled.flow.collectAsState()
+    val findPerson by AppSettings.findPersonEnabled.flow.collectAsState()
+
+    // pose model + follow mode only live while this tab is on screen
+    DisposableEffect(Unit) {
+        onDispose { GestureEngine.stop() }
+    }
 
     // ---- camera permission (asked once when the tab opens) ----
     var hasPermission by remember { mutableStateOf(context.hasCameraPermission()) }
@@ -136,6 +153,20 @@ fun CameraDepthScreen(nav: NavController) {
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.weight(1f))
+                    if (following) {
+                        TogglePill(label = "Stop following", on = true, activeColor = Color(0xFFDC2626)) {
+                            TemiRepository.stopFollowing()
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                    }
+                    TogglePill(label = "Find person", on = findPerson) {
+                        AppSettings.findPersonEnabled.set(!findPerson)
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    TogglePill(label = "Raise hand \u2192 follow me", on = raiseHandFollow) {
+                        AppSettings.raiseHandFollowEnabled.set(!raiseHandFollow)
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
                     TogglePill(label = "Flip RGB view", on = flipRgb) { flipRgb = !flipRgb }
                 }
 
@@ -151,6 +182,11 @@ fun CameraDepthScreen(nav: NavController) {
 
                     // RGB camera
                     val (rgbBadge, rgbColor) = when {
+                        gesture.tPose && following -> "STOPPING" to RedErr
+                        following -> "FOLLOWING" to AmberWarn
+                        gesture.handRaised -> "HAND RAISED" to GreenOk
+                        findPerson && gesture.scanning -> "SCANNING" to AmberWarn
+                        findPerson && gesture.personVisible -> "PERSON FOUND" to GreenOk
                         !hasPermission -> "NO PERMISSION" to AmberWarn
                         rgbError != null -> "ERROR" to RedErr
                         rgbLive -> "LIVE" to GreenOk
@@ -188,6 +224,7 @@ fun CameraDepthScreen(nav: NavController) {
                                 RgbCameraView(
                                     owner = owner,
                                     flip = flipRgb,
+                                    gesture = gesture,
                                     onStatus = { live, error ->
                                         rgbLive = live
                                         rgbError = error
@@ -196,6 +233,18 @@ fun CameraDepthScreen(nav: NavController) {
                                 )
                                 rgbError?.let { msg ->
                                     CenterMessage(title = "Camera problem", body = msg)
+                                }
+                                val info = gesture.error
+                                    ?: gesture.pose?.let { "Pose ${gesture.fps} fps \u00b7 ${it.inferenceMs} ms \u00b7 tilt ${gesture.tiltDeg}\u00b0" }
+                                if (info != null) {
+                                    Text(
+                                        text = info,
+                                        color = if (gesture.error != null) RedErr else SlateText,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier
+                                            .align(Alignment.BottomStart)
+                                            .padding(10.dp)
+                                    )
                                 }
                             }
                         }
@@ -290,10 +339,12 @@ fun CameraDepthScreen(nav: NavController) {
 private fun RgbCameraView(
     owner: LifecycleOwner,
     flip: Boolean,
+    gesture: GestureState,
     onStatus: (live: Boolean, error: String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var frontCamera by remember { mutableStateOf(true) }
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -307,6 +358,8 @@ private fun RgbCameraView(
         var disposed = false
         var provider: ProcessCameraProvider? = null
         var preview: Preview? = null
+        var analysis: ImageAnalysis? = null
+        val analysisExecutor = Executors.newSingleThreadExecutor()
         var stateData: LiveData<CameraState>? = null
 
         val observer = Observer<CameraState> { s ->
@@ -333,11 +386,24 @@ private fun RgbCameraView(
                     onStatus(false, "No camera was found on this device.")
                     return@addListener
                 }
-                val pv = Preview.Builder().build()
+                frontCamera = selector == CameraSelector.DEFAULT_FRONT_CAMERA
+                @Suppress("DEPRECATION")
+                val pv = Preview.Builder().setTargetAspectRatio(AspectRatio.RATIO_4_3).build()
                 pv.setSurfaceProvider(previewView.surfaceProvider)
                 preview = pv
+
+                // Second stream for the pose model: always the newest frame, RGBA so it converts to a Bitmap.
+                @Suppress("DEPRECATION")
+                val ia = ImageAnalysis.Builder()
+                    .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                    .build()
+                ia.setAnalyzer(analysisExecutor, GestureEngine.createAnalyzer(context))
+                analysis = ia
+
                 p.unbindAll()
-                val camera = p.bindToLifecycle(owner, selector, pv)
+                val camera = p.bindToLifecycle(owner, selector, pv, ia)
                 val data = camera.cameraInfo.cameraState
                 stateData = data
                 data.observe(owner, observer)
@@ -349,14 +415,71 @@ private fun RgbCameraView(
         onDispose {
             disposed = true
             stateData?.removeObserver(observer)
+            analysis?.clearAnalyzer()
+            analysis?.let { provider?.unbind(it) }
             preview?.let { provider?.unbind(it) }
+            analysisExecutor.shutdown()
         }
     }
 
-    AndroidView(
-        factory = { previewView },
-        modifier = modifier.graphicsLayer { scaleX = if (flip) -1f else 1f }
-    )
+    // Preview and skeleton overlay sit in one box so "Flip RGB view" mirrors both together.
+    Box(modifier = modifier.graphicsLayer { scaleX = if (flip) -1f else 1f }) {
+        AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+        PoseOverlay(
+            pose = gesture.pose,
+            handRaised = gesture.handRaised,
+            tPose = gesture.tPose,
+            mirrored = frontCamera, // PreviewView shows the front camera mirrored, the analysis frame is not
+            modifier = Modifier.fillMaxSize()
+        )
+    }
+}
+
+private val SkeletonEdges = listOf(
+    0 to 1, 0 to 2, 1 to 3, 2 to 4, 5 to 6, 5 to 7, 7 to 9, 6 to 8, 8 to 10,
+    5 to 11, 6 to 12, 11 to 12, 11 to 13, 13 to 15, 12 to 14, 14 to 16
+)
+
+/** Draws the detected body keypoints on top of the camera preview (which is letter-boxed, FIT_CENTER). */
+@Composable
+private fun PoseOverlay(pose: PoseResult?, handRaised: Boolean, tPose: Boolean, mirrored: Boolean, modifier: Modifier = Modifier) {
+    if (pose == null) return
+    Canvas(modifier = modifier) {
+        val imgAspect = pose.imageWidth.toFloat() / pose.imageHeight.toFloat()
+        val boxAspect = size.width / size.height
+        val dispW = if (imgAspect > boxAspect) size.width else size.height * imgAspect
+        val dispH = if (imgAspect > boxAspect) size.width / imgAspect else size.height
+        val left = (size.width - dispW) / 2f
+        val top = (size.height - dispH) / 2f
+
+        fun at(i: Int): Offset? {
+            val k = pose.points[i]
+            if (k.score < 0.3f) return null
+            val x = if (mirrored) 1f - k.x else k.x
+            return Offset(left + x * dispW, top + k.y * dispH)
+        }
+
+        val base = when {
+            tPose -> Color(0xFFFF5252)
+            handRaised -> Color(0xFF00FFAA)
+            else -> Color(0xFF38BDF8)
+        }
+        for ((a, b) in SkeletonEdges) {
+            val pa = at(a) ?: continue
+            val pb = at(b) ?: continue
+            val armOfRaise = handRaised && a in setOf(Kp.L_SHOULDER, Kp.R_SHOULDER, Kp.L_ELBOW, Kp.R_ELBOW)
+            drawLine(base, pa, pb, strokeWidth = if (armOfRaise) 6f else 3f)
+        }
+        for (i in pose.points.indices) {
+            val pt = at(i) ?: continue
+            val isHand = i == Kp.L_WRIST || i == Kp.R_WRIST
+            drawCircle(
+                color = if (isHand && handRaised) Color(0xFFFFC107) else base,
+                radius = if (isHand) 9f else 5f,
+                center = pt
+            )
+        }
+    }
 }
 
 private fun describeCameraError(code: Int): String = when (code) {
@@ -553,8 +676,13 @@ private fun StatusBadge(text: String, color: Color) {
 }
 
 @Composable
-private fun TogglePill(label: String, on: Boolean, onClick: () -> Unit) {
-    val bg = if (on) Color(0xFF2563EB) else Color(0xFF1E293B)
+private fun TogglePill(
+    label: String,
+    on: Boolean,
+    activeColor: Color = Color(0xFF2563EB),
+    onClick: () -> Unit
+) {
+    val bg = if (on) activeColor else Color(0xFF1E293B)
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
