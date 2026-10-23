@@ -39,6 +39,10 @@ fun AppNavigation() {
             CameraDepthScreen(nav)
         }
 
+        composable("signlanguage") {
+            SignLanguageScreen(nav)
+        }
+
         composable("settings") {
             SettingsScreen(nav)
         }

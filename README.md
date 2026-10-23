@@ -21,6 +21,7 @@ An Android app (Kotlin, Jetpack Compose, Material 3) that runs on a **modified t
 | **Analytics** | Live gauges for every sensor. |
 | **Mission** | Pick a route, start or stop it, and follow progress stop by stop with the readings taken at each one. |
 | **Camera & Depth** | Live view of the tablet camera next to a colour-coded depth map, with distance read-outs (see below). |
+| **Sign Language** | Full-screen camera that recognises single ASL signs and has temi say them aloud (see below). |
 | **Settings** | Robot and mission behaviour, route editor, Raspberry Pi connection, editable IAQ thresholds. |
 | **Startup check** | Live status of the MQTT link, data freshness, sensors reporting, battery, saved locations and storage. |
 | **IAQI scale** | Reference screen with the breakpoint tables and the current values. |
@@ -34,7 +35,7 @@ An Android app (Kotlin, Jetpack Compose, Material 3) that runs on a **modified t
 - Raspberry Pi on the same network as the temi tablet, with an MQTT broker (Mosquitto)
 - Android Studio (recent version), JDK 17+, Android SDK 36
 - App: `minSdk 23`, `targetSdk 36`
-- Dependencies (added in `app/build.gradle.kts`): `com.robotemi:sdk:1.138.0`, `org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5`, CameraX `1.4.2` (`camera-core`, `camera-camera2`, `camera-lifecycle`, `camera-view`)
+- Dependencies (added in `app/build.gradle.kts`): `com.robotemi:sdk:1.138.0`, MediaPipe `tasks-vision` and TensorFlow Lite (Sign Language tab, needs API 24 at run time), `org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5`, CameraX `1.4.2` (`camera-core`, `camera-camera2`, `camera-lifecycle`, `camera-view`)
 
 ## Setup
 
@@ -127,6 +128,48 @@ The RGB Camera panel also runs a pose model (`app/src/main/assets/movenet_lightn
 
 - **Find person:** switch on **Find person** and temi tilts its tablet slowly up and down (5° steps, about one per 1.2 s, between -15° and 45°) until the camera sees a head and both shoulders for a few frames in a row. It then stops, nudges the tilt so the head sits in the upper-middle of the picture, and stays there. If the person is gone for 4 s it starts searching again. It does not move the tablet while temi is following someone or running a mission. The badge shows **SCANNING** or **PERSON FOUND**. Off by default.
 
+## Sign Language tab
+
+The **Sign Language** tab (sidebar) shows the tablet camera full-screen and recognises **one sign (one word) at a time**. temi says each recognised word aloud.
+
+- **Caption bar (bottom):** the last recognised word and its confidence, the top guesses, and the last few words. A badge (top left) shows `READY`, `SIGNING`, `THINKING`, `LOADING MODELS` or `ERROR`.
+- **Speak: ON/OFF (top right):** whether temi says the word. With *Simulated robot* on, nothing is spoken but the caption still works.
+- **Flip input (top right):** mirrors the picture before it is analysed. If signs made with the right hand are misread, try switching it on.
+- **How a sign is detected:** raise a hand (wrist above the hips) and sign; the app records frames while a hand is up. When your hands have been down for about 0.5 s, the recording is classified. Words with at least 60% confidence are shown and spoken; the same word is not repeated within 4 s. Recordings shorter than 8 frames are ignored.
+- **Scope:** American Sign Language, 250 single signs (hello, thank you, mom, ...). **No sentences or grammar**, and it will not understand Thai or other sign languages.
+- **Best results:** good light, facing the camera, hands and face visible, 1-2 m away. Accuracy on the benchmark data is much higher than you should expect in a real room.
+
+### How it works
+
+```
+camera frame -> MediaPipe Holistic Landmarker (face + pose + both hands)
+             -> 543 landmarks per frame (468 face, 21 left hand, 33 pose, 21 right hand)
+             -> frames collected while a hand is raised
+             -> asl_signs.tflite (input [frames, 543, 3], output 250 scores)
+             -> word -> caption + temi.speak()
+```
+
+Code: `screens/SignLanguageScreen.kt` (UI), `utils/SignRecognizer.kt` (recording, accepting, speaking), `utils/SignLandmarkExtractor.kt` (MediaPipe), `utils/SignClassifier.kt` (TFLite).
+
+### Files you must add (not in the repository)
+
+`app/src/main/assets/` already contains `asl_signs.tflite` (the 250-sign model, 11.2 MB). You also need two files that were not available offline:
+
+| File | Where to get it |
+|---|---|
+| `holistic_landmarker.task` (about 20 MB) | https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task |
+| `sign_to_prediction_index_map.json` | Hugging Face `sign/kaggle-asl-signs-1st-place` (same page as the model), or the Kaggle "Isolated Sign Language Recognition" competition data |
+
+Put both in `app/src/main/assets/`. If one is missing, the tab says which one. The JSON must have exactly 250 entries (`{"TV": 0, "after": 1, ...}`); the app checks this against the model.
+
+### Android version limit
+
+MediaPipe Tasks needs **Android 7.0 (API 24)**. The app itself still supports API 23: on an older tablet the rest of the app works and this tab shows a message instead of recognising signs. The manifest uses `tools:overrideLibrary` for this; if Gradle's manifest merger still complains, add the package names it lists to that attribute.
+
+### Tuning
+
+The thresholds are constants at the top of `utils/SignRecognizer.kt` (`SPEAK_THRESHOLD`, `HAND_GONE_MS`, `MIN_FRAMES`, ...). The face landmarker is heavy: the on-screen `fps · ms` line shows the real speed. The model was trained on video at roughly 15-30 frames per second; if the tablet manages much less, accuracy drops.
+
 ## IAQ score
 
 Each sensor has four breakpoints that define its five quality bands. Each reading is converted to a 0–100 score, and the **overall IAQ score is the average of the nine scores**. The breakpoints can be edited in **Settings → IAQ Thresholds** (with a reset to defaults).
@@ -160,7 +203,7 @@ The startup screen shows simulated sources in amber so they cannot be mistaken f
 app/src/main/java/com/example/iaqieqmornitoring/
 ├── MainActivity.kt            starts settings, temi and sensor links
 ├── navigation/                screen routes
-├── screens/                   Startup, Dashboard, Analytics, Detail, IAQI scale, Mission, Camera & Depth, Settings
+├── screens/                   Startup, Dashboard, Analytics, Detail, IAQI scale, Mission, Camera & Depth, Sign Language, Settings
 ├── components/                gauges, cards, top bar, sidebar, shared form widgets
 └── utils/
     ├── AppSettings.kt         persisted settings and routes
@@ -170,6 +213,9 @@ app/src/main/java/com/example/iaqieqmornitoring/
     ├── TemiRepository.kt      the only class that uses the temi SDK (plus simulated robot)
     ├── DepthCameraSource.kt   depth stream (Camera2 DEPTH16 or simulated), colouring and distance stats
     ├── MissionManager.kt      mission engine and CSV export
+    ├── SignRecognizer.kt      sign recording / accept / speak logic (Sign Language tab)
+    ├── SignLandmarkExtractor.kt  MediaPipe Holistic -> 543 landmarks
+    ├── SignClassifier.kt      TFLite sign model
     ├── StartupChecks.kt       startup self-checks
     └── IAQCalculator.kt / IAQConfig.kt   scoring
 docs/pi_sensor_publisher_example.py
