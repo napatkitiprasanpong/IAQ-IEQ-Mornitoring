@@ -20,6 +20,7 @@ An Android app (Kotlin, Jetpack Compose, Material 3) that runs on a **modified t
 | **Dashboard** | Overall IAQ gauge and level, nine sensor cards, and a Mission Control panel. |
 | **Analytics** | Live gauges for every sensor. |
 | **Mission** | Pick a route, start or stop it, and follow progress stop by stop with the readings taken at each one. |
+| **Routine** | Daily schedule: at a set time temi drives a route, says and shows a reminder (for example "Please drink water") at each stop, and comes back later for anyone who asked for more time (see below). |
 | **Camera & Depth** | Live view of the tablet camera next to a colour-coded depth map, with distance read-outs (see below). |
 | **Sign Language** | Full-screen camera that recognises single ASL signs and has temi say them aloud (see below). |
 | **Settings** | Robot and mission behaviour, route editor, Raspberry Pi connection, editable IAQ thresholds. |
@@ -35,7 +36,7 @@ An Android app (Kotlin, Jetpack Compose, Material 3) that runs on a **modified t
 - Raspberry Pi on the same network as the temi tablet, with an MQTT broker (Mosquitto)
 - Android Studio (recent version), JDK 17+, Android SDK 36
 - App: `minSdk 23`, `targetSdk 36`
-- Dependencies (added in `app/build.gradle.kts`): `com.robotemi:sdk:1.138.0`, MediaPipe `tasks-vision` and TensorFlow Lite (Sign Language tab, needs API 24 at run time), `org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5`, CameraX `1.4.2` (`camera-core`, `camera-camera2`, `camera-lifecycle`, `camera-view`)
+- Dependencies (added in `app/build.gradle.kts`): `com.robotemi:sdk:1.138.0`, ONNX Runtime `1.17.3` (pose model for the Camera & Depth tab), MediaPipe `tasks-vision` and TensorFlow Lite (Sign Language tab, needs API 24 at run time), `org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5`, CameraX `1.4.2` (`camera-core`, `camera-camera2`, `camera-lifecycle`, `camera-view`)
 
 ## Setup
 
@@ -94,7 +95,7 @@ A mission cannot start if temi is not connected, the route is empty, or a locati
 Each mission writes a CSV to the app's external files folder under `missions/`, for example:
 
 ```
-/sdcard/Android/data/com.example.iaqieqmornitoring/files/missions/mission_20261021_101500_Route_A.csv
+/sdcard/Android/data/com.leslie.iaqieqmornitoring/files/missions/mission_20261021_101500_Route_A.csv
 ```
 
 The exact path is shown on the Mission screen. Columns:
@@ -102,6 +103,43 @@ The exact path is shown on the Mission screen. Columns:
 `time, route, stop, location, outcome, iaq, level, temp_c, humidity_pct, co2_ppm, pm25, pm10, tvoc, hcho, light_lux, sound_db, data_fresh, note`
 
 `data_fresh` is `false` if no sensor message arrived in the 15 seconds before the reading was recorded, so stale data can be told apart from real data.
+
+## Routine tab
+
+The **Routine** tab sets up reminders that temi delivers in person. A routine is a **time** plus a **mission** (one of the routes from Settings). The message is "Please drink water" by default and can be changed per routine.
+
+### How a routine runs
+
+1. At the set time, every day, temi starts the route. (The app must be open; see the limits below.)
+2. At each stop temi **speaks the message** and a **popup** appears on top of whichever tab is open, with two buttons:
+   - **Yes**: temi carries on to the next stop.
+   - **Come back in N mins**: temi also carries on to the next stop, and a **temp mission** is created for that stop.
+3. After the last stop temi **returns to home base**. For every temp mission an **N-minute timer** now starts.
+4. When a timer ends, temi drives to that one stop and asks again.
+   - **Yes**: temi returns to home base and that temp mission is cleared.
+   - **Come back in N mins**: temi returns to home base and a **new temp mission** with a new timer replaces it.
+5. When there are no temp missions left, **the routine is done**.
+
+`N` is 5 by default and can be changed in **Routine settings** (1 to 60 minutes), which is handy for testing.
+
+### Using the tab
+
+- **Add routine:** enter a name (optional), the time as `HH:MM` (24 h), pick the mission (route), and edit the message if you like. Routines have an on/off switch and can be deleted.
+- **Run now** starts a routine immediately, without waiting for its time.
+- **Routine status** shows what temi is doing. **Stop routine** stops temi and discards all waiting temp missions.
+- **Temp missions** lists each one with its countdown ("timer starts at home base" until temi is back home). **History** logs the answers and events.
+- **Popup waits for an answer** (10 to 300 s, default 60 s): if nobody taps a button in time, it counts as **Come back in N mins**, so temi never waits forever.
+
+### Rules and limits
+
+- The route, locations, home base, retries and navigation timeout all come from **Settings**. A routine will not start if temi is not connected, the route is empty, or a location is not saved on temi.
+- temi always returns to home base at the end of a routine, whatever the "return home" setting says.
+- A routine only starts if it is within 10 minutes of its time and no mission or other routine is running. It starts at most once per day. A temp mission whose timer ends during an inspection mission waits until that mission is over.
+- While a routine is driving or asking, the raise-hand follow and Find person features are paused, and the Mission tab refuses to start a mission.
+- If a stop cannot be reached, it is skipped and noted in the History. Nothing is retried beyond the usual navigation retries.
+- Routines only run **while the app is running**: there is no background service and no start at boot. The schedule is saved, but waiting temp missions are **lost if the app is closed**.
+- The popup appears inside the app. If the app is in the background, temi still speaks but no popup is visible.
+- With **Simulated robot** on, the whole flow runs on any tablet; nothing is spoken.
 
 ## Camera & Depth tab
 
@@ -124,7 +162,16 @@ The RGB Camera panel also runs a pose model (`app/src/main/assets/movenet_lightn
 - The wrist must be clearly above the shoulder line and above its elbow. Hands at chest height, hands on hips, a T-pose and arms down do not count. Either hand works.
 - Works best 1-3 m from the robot with the upper body in view. Pose detection only runs while the tab is open.
 - With **Simulated robot** on, the app shows the FOLLOWING state without moving anything, so the gesture can be tested on any tablet or phone.
-- **Stop gesture (T-pose):** stretch both arms straight out to the sides at shoulder height and hold for about 0.8 s. temi says it will stop and ends follow mode (works even if *Wave → follow me* is off). The skeleton turns red and the badge shows **STOPPING**. A bent arm, one arm out, arms up or arms down do not count.
+- **Walk to me (on by default, toggle "Walk to me first"):** temi's own follow mode finds people with its depth sensors, so it only works at close range. With *Walk to me first* on, a raised hand makes temi walk to you using only the tablet camera, and only then (optional) start follow mode:
+  1. temi says "I'm coming" and, twice a second, estimates your distance from the width of your shoulders in the picture and your direction from where you are in the frame.
+  2. If you are more than about 10° off to one side it turns towards you (`turnBy`), otherwise it drives forward with temi's obstacle avoidance (`skidJoy` with *smart* on).
+  3. It stops at the **Stop at** distance (1.0, 1.3, 1.6 or 2.0 m; tap the pill to change) and says "I'm here". It then starts follow mode for the usual 30 s, which works at that range. Switch this off with `approachThenFollow` in `AppSettings.kt` if you only want temi to walk up and wait.
+  4. It gives up if it cannot see you for 4 s, after 60 s, when a mission or routine starts, or when you make the **T-pose**.
+  - **Calibrate once:** stand exactly 2 m from temi, facing it with both shoulders visible, and tap **Calibrate (stand 2 m away)**. The pill row also shows a live "You: 2.0 m, 5° left" read-out to check it.
+  - **If temi turns away from you,** switch on **Invert turn**.
+  - **Range:** it is limited by how far the pose model can see you, roughly 3-4 m in a normal room (shoulders only a few pixels wide beyond that). Distance is an estimate: someone standing sideways looks closer than they are, and children or very broad people will be misjudged.
+  - **First test:** clear floor, someone at the robot's Stop button, and the T-pose ready. Simulated robot mode only pretends to drive for 2.5 s.
+- **Stop gesture (T-pose):** stretch both arms straight out to the sides at shoulder height and hold for about 0.8 s. temi says it will stop and ends follow mode (works even if *Raise hand → follow me* is off). The skeleton turns red and the badge shows **STOPPING**. A bent arm, one arm out, arms up or arms down do not count.
 
 - **Find person:** switch on **Find person** and temi tilts its tablet slowly up and down (5° steps, about one per 1.2 s, between -15° and 45°) until the camera sees a head and both shoulders for a few frames in a row. It then stops, nudges the tilt so the head sits in the upper-middle of the picture, and stays there. If the person is gone for 4 s it starts searching again. It does not move the tablet while temi is following someone or running a mission. The badge shows **SCANNING** or **PERSON FOUND**. Off by default.
 
@@ -151,16 +198,18 @@ camera frame -> MediaPipe Holistic Landmarker (face + pose + both hands)
 
 Code: `screens/SignLanguageScreen.kt` (UI), `utils/SignRecognizer.kt` (recording, accepting, speaking), `utils/SignLandmarkExtractor.kt` (MediaPipe), `utils/SignClassifier.kt` (TFLite).
 
-### Files you must add (not in the repository)
+### Model files
 
-`app/src/main/assets/` already contains `asl_signs.tflite` (the 250-sign model, 11.2 MB). You also need two files that were not available offline:
+`app/src/main/assets/` contains everything the app needs:
 
-| File | Where to get it |
+| File | What it is |
 |---|---|
-| `holistic_landmarker.task` (about 20 MB) | https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task |
-| `sign_to_prediction_index_map.json` | Hugging Face `sign/kaggle-asl-signs-1st-place` (same page as the model), or the Kaggle "Isolated Sign Language Recognition" competition data |
+| `asl_signs.tflite` (11.2 MB) | the 250-sign classifier |
+| `holistic_landmarker.task` (13.7 MB) | MediaPipe Holistic Landmarker bundle |
+| `sign_to_prediction_index_map.json` | sign name to class index; must have exactly 250 entries (`{"TV": 0, "after": 1, ...}`), which the app checks against the model |
+| `movenet_lightning.onnx` (9.4 MB) | pose model for the Camera & Depth tab |
 
-Put both in `app/src/main/assets/`. If one is missing, the tab says which one. The JSON must have exactly 250 entries (`{"TV": 0, "after": 1, ...}`); the app checks this against the model.
+If one of them is removed, the tab says which one is missing. The landmarker can be re-downloaded from https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task, and the JSON comes with the Hugging Face model `sign/kaggle-asl-signs-1st-place` or the Kaggle "Isolated Sign Language Recognition" data.
 
 ### Android version limit
 
@@ -203,8 +252,8 @@ The startup screen shows simulated sources in amber so they cannot be mistaken f
 app/src/main/java/com/example/iaqieqmornitoring/
 ├── MainActivity.kt            starts settings, temi and sensor links
 ├── navigation/                screen routes
-├── screens/                   Startup, Dashboard, Analytics, Detail, IAQI scale, Mission, Camera & Depth, Sign Language, Settings
-├── components/                gauges, cards, top bar, sidebar, shared form widgets
+├── screens/                   Startup, Dashboard, Analytics, Detail, IAQI scale, Mission, Routine, Camera & Depth, Sign Language, Settings
+├── components/                gauges, cards, top bar, sidebar, shared form widgets, RoutinePromptHost (the routine popup)
 └── utils/
     ├── AppSettings.kt         persisted settings and routes
     ├── ThresholdStore.kt      editable IAQ breakpoints
@@ -213,6 +262,11 @@ app/src/main/java/com/example/iaqieqmornitoring/
     ├── TemiRepository.kt      the only class that uses the temi SDK (plus simulated robot)
     ├── DepthCameraSource.kt   depth stream (Camera2 DEPTH16 or simulated), colouring and distance stats
     ├── MissionManager.kt      mission engine and CSV export
+    ├── RoutineManager.kt      routine scheduler, popup flow and temp missions (Routine tab)
+    ├── GestureEngine.kt       camera -> pose -> raised hand / T-pose / find person -> temi
+    ├── ApproachController.kt  walks temi to a person using the tablet camera (distance from shoulder width)
+    ├── PoseDetector.kt        MoveNet Lightning (ONNX Runtime)
+    ├── GestureDetectors.kt    raised-hand and T-pose detectors
     ├── SignRecognizer.kt      sign recording / accept / speak logic (Sign Language tab)
     ├── SignLandmarkExtractor.kt  MediaPipe Holistic -> 543 landmarks
     ├── SignClassifier.kt      TFLite sign model
@@ -241,5 +295,8 @@ docs/pi_sensor_publisher_example.py
 - The overall IEQ value on the dashboard is currently `(temperature + humidity) / 2`; it is not a standard comfort index.
 - Temperature and humidity are scored as "middle is best", and the score is not continuous at the second breakpoint. Light and sound are scored as "middle is best" in the overall IAQ but shown as "lower is better" on the sensor cards.
 - The app does not keep a long-term history of readings; the mission CSV files are the only saved record.
+- Routines only run while the app is open, and waiting temp missions are not saved (see the Routine tab section).
+- temi's follow mode (`beWithMe`) relies on the robot's own person detection, which only works at close range. That is why *Walk to me first* brings temi close before handing over to it.
+- *Walk to me* judges distance from shoulder width in a single camera, so it is approximate and cannot see beyond a few metres. The first time, check which way temi turns (Invert turn) and calibrate.
 - The sensor connection is not encrypted (plain MQTT on a local network).
-- Developed without access to a physical temi; test the first missions with the robot in a clear area and keep the Stop button within reach.
+- Test the first missions and routines with the robot in a clear area and keep the Stop button within reach.

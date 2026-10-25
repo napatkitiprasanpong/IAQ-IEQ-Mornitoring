@@ -12,6 +12,26 @@ import org.json.JSONObject
 /** One inspection route: an ordered list of temi saved-location names. */
 data class MissionRoute(val name: String, val waypoints: List<String>)
 
+const val DEFAULT_ROUTINE_MESSAGE = "Please drink water"
+
+/**
+ * A scheduled routine. Every day at [hour]:[minute] temi drives the route [routeName] and, at each
+ * stop, speaks [message] and shows a popup (Yes / Come back in N mins).
+ * [lastRunDay] (yyyyMMdd) stops a routine from starting twice on the same day.
+ */
+data class Routine(
+    val id: String,
+    val name: String,
+    val hour: Int,
+    val minute: Int,
+    val routeName: String,
+    val message: String = DEFAULT_ROUTINE_MESSAGE,
+    val enabled: Boolean = true,
+    val lastRunDay: String = ""
+) {
+    val minuteOfDay: Int get() = hour * 60 + minute
+}
+
 /** A single persisted setting that the UI can observe through [flow]. */
 class Setting<T : Any>(val key: String, val default: T) {
     private val _flow = MutableStateFlow(default)
@@ -39,6 +59,7 @@ object AppSettings {
 
     private const val PREFS_NAME = "iaq_ieq_settings"
     private const val KEY_ROUTES = "routes_json"
+    private const val KEY_ROUTINES = "routines_json"
 
     private var prefs: SharedPreferences? = null
     lateinit var appContext: Context
@@ -61,6 +82,22 @@ object AppSettings {
     /** Tilt temi's tablet slowly up and down until the camera sees a person. */
     val findPersonEnabled = Setting("find_person_enabled", false)
 
+    // ---- raise hand -> temi walks to the person (uses the tablet camera, not temi's depth sensors) ----
+    val approachEnabled = Setting("approach_enabled", true)
+    /** After arriving, hand over to temi's follow mode (works at close range). */
+    val approachThenFollow = Setting("approach_then_follow", true)
+    val approachStopDistanceCm = Setting("approach_stop_cm", 130)
+    /** Switch on if temi turns away from you instead of towards you. */
+    val approachInvertTurn = Setting("approach_invert_turn", false)
+    /** Camera focal length in image widths x 1000 (set by the Calibrate button). 785 = a 65 degree wide lens. */
+    val approachFocalPermille = Setting("approach_focal_permille", 785)
+
+    // ---- routines (Routine tab) ----
+    /** Minutes temi waits at home base before coming back after "Come back in N mins". */
+    val routineSnoozeMinutes = Setting("routine_snooze_min", 5)
+    /** Seconds the popup waits for an answer; no answer is treated like "Come back in N mins". */
+    val routinePromptTimeoutSeconds = Setting("routine_prompt_timeout_s", 60)
+
     // ---- Raspberry Pi sensor link ----
     val simulateSensors = Setting("simulate_sensors", false)
     val mqttHost = Setting("mqtt_host", "raspberrypi.local")
@@ -73,6 +110,10 @@ object AppSettings {
     private val _routes = MutableStateFlow(defaultRoutes())
     val routes: StateFlow<List<MissionRoute>> = _routes.asStateFlow()
 
+    // ---- routines ----
+    private val _routines = MutableStateFlow<List<Routine>>(emptyList())
+    val routines: StateFlow<List<Routine>> = _routines.asStateFlow()
+
     fun init(context: Context) {
         appContext = context.applicationContext
         val p = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -80,10 +121,11 @@ object AppSettings {
 
         listOf(
             simulateRobot, selectedRoute, dwellSeconds, arrivalTimeoutSeconds, retries,
-            homeBase, returnHome, raiseHandFollowEnabled, raiseHandFollowSeconds, findPersonEnabled, simulateSensors, mqttHost, mqttPort, mqttTopic, mqttUser, mqttPass
+            homeBase, returnHome, raiseHandFollowEnabled, raiseHandFollowSeconds, findPersonEnabled, approachEnabled, approachThenFollow, approachStopDistanceCm, approachInvertTurn, approachFocalPermille, routineSnoozeMinutes, routinePromptTimeoutSeconds, simulateSensors, mqttHost, mqttPort, mqttTopic, mqttUser, mqttPass
         ).forEach { it.load(p) }
 
         p.getString(KEY_ROUTES, null)?.let { _routes.value = routesFromJson(it) }
+        p.getString(KEY_ROUTINES, null)?.let { _routines.value = routinesFromJson(it) }
         ThresholdStore.init(p)
     }
 
@@ -105,6 +147,52 @@ object AppSettings {
         _routes.value = safe
         prefs?.edit()?.putString(KEY_ROUTES, routesToJson(safe))?.apply()
         if (safe.none { it.name == selectedRoute.value }) selectedRoute.set(safe.first().name)
+    }
+
+    // ---- routine helpers ----
+    fun updateRoutines(transform: (List<Routine>) -> List<Routine>) {
+        val next = transform(_routines.value)
+        _routines.value = next
+        prefs?.edit()?.putString(KEY_ROUTINES, routinesToJson(next))?.apply()
+    }
+
+    private fun routinesToJson(list: List<Routine>): String {
+        val arr = JSONArray()
+        list.forEach { r ->
+            arr.put(
+                JSONObject()
+                    .put("id", r.id).put("name", r.name)
+                    .put("hour", r.hour).put("minute", r.minute)
+                    .put("route", r.routeName).put("message", r.message)
+                    .put("enabled", r.enabled).put("lastRunDay", r.lastRunDay)
+            )
+        }
+        return arr.toString()
+    }
+
+    private fun routinesFromJson(json: String): List<Routine> {
+        return try {
+            val arr = JSONArray(json)
+            val out = ArrayList<Routine>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                out.add(
+                    Routine(
+                        id = o.getString("id"),
+                        name = o.optString("name", "Routine"),
+                        hour = o.optInt("hour", 8).coerceIn(0, 23),
+                        minute = o.optInt("minute", 0).coerceIn(0, 59),
+                        routeName = o.optString("route", ""),
+                        message = o.optString("message", DEFAULT_ROUTINE_MESSAGE).ifBlank { DEFAULT_ROUTINE_MESSAGE },
+                        enabled = o.optBoolean("enabled", true),
+                        lastRunDay = o.optString("lastRunDay", "")
+                    )
+                )
+            }
+            out
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     private fun defaultRoutes() = listOf(

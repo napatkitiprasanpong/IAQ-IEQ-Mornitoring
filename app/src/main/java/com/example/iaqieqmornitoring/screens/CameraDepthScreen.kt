@@ -51,6 +51,8 @@ import com.example.iaqieqmornitoring.utils.GestureState
 import com.example.iaqieqmornitoring.utils.Kp
 import com.example.iaqieqmornitoring.utils.PoseResult
 import com.example.iaqieqmornitoring.utils.TemiRepository
+import com.example.iaqieqmornitoring.utils.ApproachController
+import com.example.iaqieqmornitoring.utils.ApproachPhase
 import com.example.iaqieqmornitoring.utils.GestureEngine
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -76,6 +78,12 @@ fun CameraDepthScreen(nav: NavController) {
     val following by TemiRepository.following.collectAsState()
     val raiseHandFollow by AppSettings.raiseHandFollowEnabled.flow.collectAsState()
     val findPerson by AppSettings.findPersonEnabled.flow.collectAsState()
+    val approachOn by AppSettings.approachEnabled.flow.collectAsState()
+    val approachInvert by AppSettings.approachInvertTurn.flow.collectAsState()
+    val stopCm by AppSettings.approachStopDistanceCm.flow.collectAsState()
+    val approach by ApproachController.state.collectAsState()
+    val personEstimate = remember(gesture.pose) { gesture.pose?.let { ApproachController.estimate(it) } }
+    var calibrationNote by remember { mutableStateOf<String?>(null) }
 
     // pose model + follow mode only live while this tab is on screen
     DisposableEffect(Unit) {
@@ -170,6 +178,46 @@ fun CameraDepthScreen(nav: NavController) {
                     TogglePill(label = "Flip RGB view", on = flipRgb) { flipRgb = !flipRgb }
                 }
 
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // ---- "walk to me" controls ----
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TogglePill(label = "Walk to me first", on = approachOn) {
+                        AppSettings.approachEnabled.set(!approachOn)
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    TogglePill(label = "Stop at ${"%.1f".format(Locale.US, stopCm / 100f)} m", on = false) {
+                        val steps = listOf(100, 130, 160, 200)
+                        AppSettings.approachStopDistanceCm.set(steps.firstOrNull { it > stopCm } ?: steps.first())
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    TogglePill(label = "Calibrate (stand 2 m away)", on = false) {
+                        calibrationNote =
+                            if (ApproachController.calibrate(gesture.pose)) "Calibrated"
+                            else "Stand 2 m from temi, facing it, shoulders in view"
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    TogglePill(label = "Invert turn", on = approachInvert) {
+                        AppSettings.approachInvertTurn.set(!approachInvert)
+                    }
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Text(
+                        text = calibrationNote
+                            ?: personEstimate?.let {
+                                "You: %.1f m, %d\u00B0 %s".format(
+                                    Locale.US, it.distanceM, kotlin.math.abs(it.bearingDeg).toInt(),
+                                    if (it.bearingDeg >= 0) "right" else "left"
+                                )
+                            }
+                            ?: "",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 13.sp
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // ---- the two live views ----
@@ -182,7 +230,10 @@ fun CameraDepthScreen(nav: NavController) {
 
                     // RGB camera
                     val (rgbBadge, rgbColor) = when {
-                        gesture.tPose && following -> "STOPPING" to RedErr
+                        gesture.tPose && (following || approach.phase != ApproachPhase.IDLE) -> "STOPPING" to RedErr
+                        approach.phase == ApproachPhase.TURNING -> "TURNING TO YOU" to AmberWarn
+                        approach.phase == ApproachPhase.DRIVING ->
+                            (approach.distanceM?.let { "COMING \u00B7 %.1f m".format(Locale.US, it) } ?: "COMING") to AmberWarn
                         following -> "FOLLOWING" to AmberWarn
                         gesture.handRaised -> "HAND RAISED" to GreenOk
                         findPerson && gesture.scanning -> "SCANNING" to AmberWarn

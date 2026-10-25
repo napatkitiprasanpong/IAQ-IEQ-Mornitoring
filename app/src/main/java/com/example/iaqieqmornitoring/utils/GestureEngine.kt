@@ -27,6 +27,8 @@ data class GestureState(
     /** The tablet is currently sweeping up and down looking for a person. */
     val scanning: Boolean = false,
     val tiltDeg: Int = 0,
+    /** When [pose] was produced (SystemClock.elapsedRealtime). */
+    val poseTimeMs: Long = 0L,
     val error: String? = null,
     /** Pose estimates per second (rolling). */
     val fps: Int = 0
@@ -85,7 +87,7 @@ object GestureEngine {
             fpsCount++
             visibleFrames = if (isPersonInView(pose)) visibleFrames + 1 else 0
             _state.value = _state.value.copy(
-                pose = pose, handRaised = handRaised, tPose = tPose,
+                pose = pose, handRaised = handRaised, tPose = tPose, poseTimeMs = now,
                 personVisible = visibleFrames >= 3, error = null
             )
 
@@ -108,8 +110,25 @@ object GestureEngine {
         if (!AppSettings.raiseHandFollowEnabled.value) return
         if (now - lastTriggerMs < TRIGGER_COOLDOWN_MS) return
         if (MissionManager.state.value.isActive) return      // never hijack a running inspection
+        if (RoutineManager.state.value.isMoving) return      // ...or a running routine
         if (TemiRepository.following.value) return
+        if (ApproachController.isActive) return
         if (!TemiRepository.state.value.ready) return
+
+        // Preferred: walk to the person using the tablet camera. temi's own follow mode cannot see
+        // someone who is far away, so it is only used once temi has arrived (if enabled).
+        if (AppSettings.approachEnabled.value) {
+            lastTriggerMs = now
+            followJob?.cancel()
+            followJob = scope.launch {
+                val arrived = ApproachController.approach { _state.value }
+                if (arrived && AppSettings.approachThenFollow.value && TemiRepository.beWithMe()) {
+                    delay(AppSettings.raiseHandFollowSeconds.value * 1000L)
+                    TemiRepository.stopFollowing()
+                }
+            }
+            return
+        }
 
         if (TemiRepository.beWithMe()) {
             lastTriggerMs = now
@@ -145,7 +164,9 @@ object GestureEngine {
         AppSettings.findPersonEnabled.value &&
             TemiRepository.state.value.ready &&
             !TemiRepository.following.value &&
-            !MissionManager.state.value.isActive
+            !MissionManager.state.value.isActive &&
+            !RoutineManager.state.value.isMoving &&
+            !ApproachController.isActive
 
     private fun setScanning(on: Boolean) {
         val tilt = TemiRepository.tiltDegrees.value
@@ -205,7 +226,7 @@ object GestureEngine {
 
     /** T-pose gesture: stop following. Always allowed while following, even if "raise hand to follow" is switched off. */
     private fun onTPoseStarted(now: Long) {
-        if (!TemiRepository.following.value) return
+        if (!TemiRepository.following.value && !ApproachController.isActive) return
         followJob?.cancel()
         TemiRepository.stopFollowing()
         TemiRepository.speak("Okay, I'll stop here.")

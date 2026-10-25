@@ -203,6 +203,36 @@ object TemiRepository : OnRobotReadyListener,
         }
     }
 
+    /** Turns temi's body by [degrees] (the SDK treats positive as counter-clockwise, i.e. to the left). */
+    fun turnBy(degrees: Int, speed: Float = 0.6f): Boolean {
+        if (degrees == 0) return true
+        if (_state.value.simulated) return true
+        val robot = robotOrNull() ?: return false
+        if (!_state.value.ready) return false
+        return try {
+            robot.turnBy(degrees, speed)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Manual drive step: x = forward (1) / backward (-1), y = turn left (1) / right (-1).
+     * [smart] lets temi's own navigation steer around obstacles. Send again at least every 500 ms to keep moving.
+     */
+    fun skidJoy(x: Float, y: Float, smart: Boolean = true): Boolean {
+        if (_state.value.simulated) return true
+        val robot = robotOrNull() ?: return false
+        if (!_state.value.ready) return false
+        return try {
+            robot.skidJoy(x, y, smart)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     /** Speaks text using temi TTS engine. */
     fun speak(text: String, showOnScreen: Boolean = false) {
         if (text.isBlank()) return
