@@ -2,10 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- MediaPipe Tasks (Sign Language tab) needs API 24; the rest of the app still supports API 23.
-         The Sign Language tab checks the Android version at runtime and shows a message on older tablets. -->
-    <uses-sdk tools:overrideLibrary="com.google.mediapipe.tasks.vision, com.google.mediapipe.tasks.core, com.google.mediapipe.framework" />
-
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Camera & Depth tab: tablet camera preview and (if the device exposes one) the depth camera -->

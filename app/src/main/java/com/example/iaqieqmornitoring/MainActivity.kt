@@ -8,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import com.example.iaqieqmornitoring.navigation.AppNavigation
 import com.example.iaqieqmornitoring.ui.theme.IAQIEQMornitoringTheme
 import com.example.iaqieqmornitoring.utils.AppSettings
+import com.example.iaqieqmornitoring.utils.RoutineManager
 import com.example.iaqieqmornitoring.utils.SensorRepository
 import com.example.iaqieqmornitoring.utils.TemiRepository
 import com.robotemi.sdk.Robot
@@ -36,6 +37,8 @@ class MainActivity : ComponentActivity(), OnRobotReadyListener {
             TemiRepository.applyMode()          // temi robot (or simulated robot)
             SensorRepository.applySettings()    // Raspberry Pi over MQTT (or simulated sensors)
         }
+
+        RoutineManager.startScheduler()     // runs scheduled routines while the app is open
 
         enableEdgeToEdge()
 

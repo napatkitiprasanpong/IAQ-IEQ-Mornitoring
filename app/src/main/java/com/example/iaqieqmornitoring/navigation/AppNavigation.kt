@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
+import com.example.iaqieqmornitoring.components.RoutinePromptHost
 import com.example.iaqieqmornitoring.screens.*
 
 @Composable
@@ -35,6 +36,10 @@ fun AppNavigation() {
             MissionScreen(nav)
         }
 
+        composable("routine") {
+            RoutineScreen(nav)
+        }
+
         composable("camera") {
             CameraDepthScreen(nav)
         }
@@ -57,4 +62,7 @@ fun AppNavigation() {
             DetailScreen(sensorName = sensorName, navController = nav)
         }
     }
+
+    // Routine popup: shown on top of whichever screen is open.
+    RoutinePromptHost()
 }

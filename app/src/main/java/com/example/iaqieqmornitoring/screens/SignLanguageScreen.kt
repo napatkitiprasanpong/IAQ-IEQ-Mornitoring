@@ -37,7 +37,8 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.navigation.NavController
 import com.example.iaqieqmornitoring.components.Sidebar
 import com.example.iaqieqmornitoring.components.TopBar
-import com.example.iaqieqmornitoring.utils.SignLayout
+import com.example.iaqieqmornitoring.utils.AppSettings
+import com.example.iaqieqmornitoring.utils.SignClassifier
 import com.example.iaqieqmornitoring.utils.SignOverlay
 import com.example.iaqieqmornitoring.utils.SignRecognizer
 import com.example.iaqieqmornitoring.utils.SignStatus
@@ -68,6 +69,7 @@ fun SignLanguageScreen(nav: NavController) {
     val state by SignRecognizer.state.collectAsState()
     val speak by SignRecognizer.speakEnabled.collectAsState()
     val flip by SignRecognizer.flipInput.collectAsState()
+    val inputMode by AppSettings.signInputMode.flow.collectAsState()
 
     // ---- camera permission (asked once when the tab opens) ----
     var hasPermission by remember { mutableStateOf(context.hasCameraPermission()) }
@@ -148,7 +150,7 @@ fun SignLanguageScreen(nav: NavController) {
                 // ---- status badge (top left) ----
                 val (badgeText, badgeColor) = when (state.status) {
                     SignStatus.IDLE -> "STARTING" to SlateText
-                    SignStatus.LOADING -> "LOADING MODELS" to AmberWarn
+                    SignStatus.LOADING -> "LOADING MODEL" to AmberWarn
                     SignStatus.READY -> "READY" to GreenOk
                     SignStatus.SIGNING -> "SIGNING" to GreenOk
                     SignStatus.THINKING -> "THINKING" to AmberWarn
@@ -172,14 +174,24 @@ fun SignLanguageScreen(nav: NavController) {
                     TogglePill(label = if (speak) "Speak: ON" else "Speak: OFF", on = speak) {
                         SignRecognizer.speakEnabled.value = !speak
                     }
-                    TogglePill(label = "Flip input", on = flip) {
+                    TogglePill(label = "Flip hand", on = flip) {
                         SignRecognizer.flipInput.value = !flip
+                    }
+                    TogglePill(
+                        label = when (inputMode) {
+                            SignClassifier.INPUT_MINUS_ONE_ONE -> "Input -1..1"
+                            SignClassifier.INPUT_RAW_255 -> "Input 0..255"
+                            else -> "Input 0..1"
+                        },
+                        on = false
+                    ) {
+                        AppSettings.signInputMode.set((inputMode + 1) % 3)
                     }
                 }
 
                 // ---- caption bar (bottom) ----
                 CaptionBar(
-                    caption = state.caption,
+                    caption = state.word.ifBlank { state.caption },
                     confidence = state.confidence,
                     message = state.message,
                     guesses = state.guesses.joinToString("  \u00b7  ") {
@@ -235,7 +247,7 @@ private fun CaptionBar(
                 }
             }
             Text(
-                text = message.ifBlank { "Raise your hand and sign one word." },
+                text = message.ifBlank { "Raise a hand and spell with letters." },
                 color = SlateText,
                 fontSize = 14.sp
             )
@@ -339,20 +351,14 @@ private fun SignCameraView(
         // is on, so the overlay is mirrored exactly when exactly one of the two applies.
         LandmarkOverlay(
             overlay = overlay,
-            mirrored = frontCamera != flipInput,
+            mirrored = frontCamera,   // the hand picture is cut from the unmirrored frame; only the preview is mirrored
             signing = signing,
             modifier = Modifier.fillMaxSize()
         )
     }
 }
 
-private val HandChains = listOf(
-    listOf(0, 1, 2, 3, 4), listOf(0, 5, 6, 7, 8), listOf(0, 9, 10, 11, 12),
-    listOf(0, 13, 14, 15, 16), listOf(0, 17, 18, 19, 20), listOf(5, 9, 13, 17)
-)
-private val ArmChains = listOf(listOf(11, 12), listOf(11, 13, 15), listOf(12, 14, 16))
-
-/** Draws both hands and the arms on top of the preview (which is cropped to fill, FILL_CENTER). */
+/** Draws the square cut out around the hand and the forearm on top of the preview (cropped to fill, FILL_CENTER). */
 @Composable
 private fun LandmarkOverlay(
     overlay: SignOverlay?,
@@ -370,30 +376,24 @@ private fun LandmarkOverlay(
         val ox = (size.width - dw) / 2f
         val oy = (size.height - dh) / 2f
 
-        fun at(index: Int): Offset? {
-            val x = overlay.landmarks[index * 3]
-            val y = overlay.landmarks[index * 3 + 1]
-            if (x.isNaN() || y.isNaN()) return null
+        fun at(x: Float, y: Float): Offset {
             val xx = if (mirrored) 1f - x else x
             return Offset(ox + xx * dw, oy + y * dh)
         }
 
-        fun chain(start: Int, chain: List<Int>, color: Color, width: Float) {
-            for (i in 0 until chain.size - 1) {
-                val a = at(start + chain[i]) ?: continue
-                val b = at(start + chain[i + 1]) ?: continue
-                drawLine(color, a, b, strokeWidth = width)
-            }
-        }
-
-        val handColor = if (signing) GreenOk else Color(0xFF38BDF8)
-        for (start in listOf(SignLayout.LEFT_HAND_START, SignLayout.RIGHT_HAND_START)) {
-            for (c in HandChains) chain(start, c, handColor, 4f)
-            for (i in 0 until SignLayout.HAND_COUNT) {
-                at(start + i)?.let { drawCircle(handColor, radius = 5f, center = it) }
-            }
-        }
-        for (c in ArmChains) chain(SignLayout.POSE_START, c, Color(0xFF38BDF8).copy(alpha = 0.7f), 3f)
+        val color = if (signing) GreenOk else Color(0xFF38BDF8)
+        val a = at(overlay.box[0], overlay.box[1])
+        val b = at(overlay.box[2], overlay.box[3])
+        drawRect(
+            color = color,
+            topLeft = Offset(minOf(a.x, b.x), minOf(a.y, b.y)),
+            size = androidx.compose.ui.geometry.Size(kotlin.math.abs(b.x - a.x), kotlin.math.abs(b.y - a.y)),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4f)
+        )
+        val elbow = at(overlay.arm[0], overlay.arm[1])
+        val wrist = at(overlay.arm[2], overlay.arm[3])
+        drawLine(color.copy(alpha = 0.7f), elbow, wrist, strokeWidth = 3f)
+        drawCircle(color, radius = 6f, center = wrist)
     }
 }
 

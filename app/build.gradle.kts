@@ -37,15 +37,15 @@ android {
     buildFeatures {
         compose = true
     }
-    // Sign Language tab: the TFLite model and the MediaPipe .task bundle must stay uncompressed in the APK.
+    // Sign Language tab: the TFLite model must stay uncompressed in the APK.
     androidResources {
-        noCompress += listOf("tflite", "task")
+        noCompress += listOf("tflite")
     }
     packaging {
         resources {
             excludes += setOf("META-INF/INDEX.LIST", "META-INF/DEPENDENCIES", "/META-INF/{AL2.0,LGPL2.1}")
         }
-        // ONNX Runtime, TensorFlow Lite and MediaPipe may each ship libc++_shared.so
+        // ONNX Runtime and TensorFlow Lite may each ship libc++_shared.so
         jniLibs {
             pickFirsts += "**/libc++_shared.so"
         }
@@ -78,12 +78,8 @@ dependencies {
     // ONNX Runtime: runs the MoveNet pose model (assets/movenet_lightning.onnx) for wave detection
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.17.3")
 
-    // Sign Language tab:
-    //  - MediaPipe Holistic Landmarker (face + pose + both hands) -> the 543 landmarks the sign model expects.
-    //    NOTE: MediaPipe Tasks needs Android 7.0 (API 24). See the tools:overrideLibrary line in AndroidManifest.xml.
-    //    Pin this to the exact version once Gradle has synced, so builds stay reproducible.
-    implementation("com.google.mediapipe:tasks-vision:latest.release")
-    //  - TensorFlow Lite: runs assets/asl_signs.tflite (ASL isolated-sign model, 250 signs)
+    // Sign Language tab: TensorFlow Lite runs assets/asl_alphabet.tflite (ASL fingerspelling classifier).
+    // The hand is located with the MoveNet pose model above. No MediaPipe, so Android 6 (API 23) works.
     implementation("org.tensorflow:tensorflow-lite:2.16.1")
 
     // MQTT client for the Raspberry Pi sensor stream

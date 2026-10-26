@@ -22,7 +22,7 @@ An Android app (Kotlin, Jetpack Compose, Material 3) that runs on a **modified t
 | **Mission** | Pick a route, start or stop it, and follow progress stop by stop with the readings taken at each one. |
 | **Routine** | Daily schedule: at a set time temi drives a route, says and shows a reminder (for example "Please drink water") at each stop, and comes back later for anyone who asked for more time (see below). |
 | **Camera & Depth** | Live view of the tablet camera next to a colour-coded depth map, with distance read-outs (see below). |
-| **Sign Language** | Full-screen camera that recognises single ASL signs and has temi say them aloud (see below). |
+| **Sign Language** | Full-screen camera that reads ASL fingerspelling (letters) and has temi say the spelled word aloud (see below). |
 | **Settings** | Robot and mission behaviour, route editor, Raspberry Pi connection, editable IAQ thresholds. |
 | **Startup check** | Live status of the MQTT link, data freshness, sensors reporting, battery, saved locations and storage. |
 | **IAQI scale** | Reference screen with the breakpoint tables and the current values. |
@@ -36,7 +36,7 @@ An Android app (Kotlin, Jetpack Compose, Material 3) that runs on a **modified t
 - Raspberry Pi on the same network as the temi tablet, with an MQTT broker (Mosquitto)
 - Android Studio (recent version), JDK 17+, Android SDK 36
 - App: `minSdk 23`, `targetSdk 36`
-- Dependencies (added in `app/build.gradle.kts`): `com.robotemi:sdk:1.138.0`, ONNX Runtime `1.17.3` (pose model for the Camera & Depth tab), MediaPipe `tasks-vision` and TensorFlow Lite (Sign Language tab, needs API 24 at run time), `org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5`, CameraX `1.4.2` (`camera-core`, `camera-camera2`, `camera-lifecycle`, `camera-view`)
+- Dependencies (added in `app/build.gradle.kts`): `com.robotemi:sdk:1.138.0`, ONNX Runtime `1.17.3` (pose model for the Camera & Depth tab), TensorFlow Lite (Sign Language tab), `org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.5`, CameraX `1.4.2` (`camera-core`, `camera-camera2`, `camera-lifecycle`, `camera-view`)
 
 ## Setup
 
@@ -177,47 +177,47 @@ The RGB Camera panel also runs a pose model (`app/src/main/assets/movenet_lightn
 
 ## Sign Language tab
 
-The **Sign Language** tab (sidebar) shows the tablet camera full-screen and recognises **one sign (one word) at a time**. temi says each recognised word aloud.
+The **Sign Language** tab (sidebar) shows the tablet camera full-screen and reads **ASL fingerspelling**: you spell a word letter by letter with one hand, and temi says the word aloud. It does **not** need MediaPipe, so it runs on Android 6 (API 23).
 
-- **Caption bar (bottom):** the last recognised word and its confidence, the top guesses, and the last few words. A badge (top left) shows `READY`, `SIGNING`, `THINKING`, `LOADING MODELS` or `ERROR`.
+- **Caption bar (bottom):** the letters spelled so far (large), the top guesses for the letter being shown, a hold progress message ("Hold C... 60%"), and the last few finished words. A badge (top left) shows `READY`, `SIGNING`, `LOADING MODEL` or `ERROR`. A green square on the picture shows the part of the image that is given to the model.
 - **Speak: ON/OFF (top right):** whether temi says the word. With *Simulated robot* on, nothing is spoken but the caption still works.
-- **Flip input (top right):** mirrors the picture before it is analysed. If signs made with the right hand are misread, try switching it on.
-- **How a sign is detected:** raise a hand (wrist above the hips) and sign; the app records frames while a hand is up. When your hands have been down for about 0.5 s, the recording is classified. Words with at least 60% confidence are shown and spoken; the same word is not repeated within 4 s. Recordings shorter than 8 frames are ignored.
-- **Scope:** American Sign Language, 250 single signs (hello, thank you, mom, ...). **No sentences or grammar**, and it will not understand Thai or other sign languages.
-- **Best results:** good light, facing the camera, hands and face visible, 1-2 m away. Accuracy on the benchmark data is much higher than you should expect in a real room.
+- **Flip hand (top right):** mirrors the hand picture before it is classified. Most alphabet datasets show a right hand; if you sign with your left hand, or letters come out as mirror images, switch it on.
+- **Input 0..1 / -1..1 / 0..255 (top right):** how the model expects pixel values. A .tflite file does not say how its training images were scaled, so tap the pill until the guesses make sense (most models use `0..1` or `-1..1`; a model that rescales inside itself uses `0..255`). Models with `uint8` input ignore it. The choice is remembered.
 
-### How it works
+### How a word is spelled
+
+1. Raise a hand (wrist above the hips) and show a letter. The pose model finds the wrist and elbow, and a square is cut out just past the wrist.
+2. The letter is added once it has been shown steadily for 0.8 s at 70% confidence or more. The same letter twice in a row (for example the two L in "HELLO") needs a short pause or a 1.5 s hold.
+3. Lower your hand for about 1.8 s, or show the model's `space` sign, and the word is finished: it is shown and temi says it. A `del` sign removes the last letter.
+
+**Scope:** American Sign Language **letters** only. J and Z need movement and will not be recognised properly by a single-picture model. No whole-word signs, no sentences, and no Thai or other sign languages. Alphabet models are usually trained on clean photos, so expect lower accuracy in a real room: good light, a plain background, hand about 1 m away and held still.
 
 ```
-camera frame -> MediaPipe Holistic Landmarker (face + pose + both hands)
-             -> 543 landmarks per frame (468 face, 21 left hand, 33 pose, 21 right hand)
-             -> frames collected while a hand is raised
-             -> asl_signs.tflite (input [frames, 543, 3], output 250 scores)
-             -> word -> caption + temi.speak()
+camera frame -> MoveNet pose (same ONNX model as the Camera & Depth tab) -> wrist + elbow of the raised hand
+             -> square crop past the wrist, scaled to the model's input size
+             -> asl_alphabet.tflite -> letter
+             -> hold 0.8 s -> letters -> word -> caption + temi.speak()
 ```
 
-Code: `screens/SignLanguageScreen.kt` (UI), `utils/SignRecognizer.kt` (recording, accepting, speaking), `utils/SignLandmarkExtractor.kt` (MediaPipe), `utils/SignClassifier.kt` (TFLite).
+Code: `screens/SignLanguageScreen.kt` (UI), `utils/SignRecognizer.kt` (hand crop, letters to words, speaking), `utils/SignClassifier.kt` (TensorFlow Lite).
 
 ### Model files
 
-`app/src/main/assets/` contains everything the app needs:
+`app/src/main/assets/` must contain:
 
 | File | What it is |
 |---|---|
-| `asl_signs.tflite` (11.2 MB) | the 250-sign classifier |
-| `holistic_landmarker.task` (13.7 MB) | MediaPipe Holistic Landmarker bundle |
-| `sign_to_prediction_index_map.json` | sign name to class index; must have exactly 250 entries (`{"TV": 0, "after": 1, ...}`), which the app checks against the model |
-| `movenet_lightning.onnx` (9.4 MB) | pose model for the Camera & Depth tab |
+| `movenet_lightning.onnx` (9.4 MB) | pose model (Camera & Depth tab and hand finding here). Already in the project. |
+| `asl_alphabet.tflite` | **you add this**: an ASL alphabet image classifier. |
+| `asl_alphabet_labels.txt` | optional: one label per line, in the model's output order. |
 
-If one of them is removed, the tab says which one is missing. The landmarker can be re-downloaded from https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/latest/holistic_landmarker.task, and the JSON comes with the Hugging Face model `sign/kaggle-asl-signs-1st-place` or the Kaggle "Isolated Sign Language Recognition" data.
+Requirements for the alphabet model: input `[1, height, width, 3]` (RGB, float32 or uint8), output `[1, classes]` (probabilities or logits, float or quantised). Size and types are read from the file. Without the labels file, **26 outputs are read as A-Z** and **29 outputs as A-Z, del, nothing, space** (the order of the Kaggle "ASL Alphabet" dataset); any other size needs the labels file. Label names `nothing`/`blank`/`none`/`background` are ignored, `space` ends a word and `del`/`delete` removes a letter. If the file is missing the tab says so.
 
-### Android version limit
-
-MediaPipe Tasks needs **Android 7.0 (API 24)**. The app itself still supports API 23: on an older tablet the rest of the app works and this tab shows a message instead of recognising signs. The manifest uses `tools:overrideLibrary` for this; if Gradle's manifest merger still complains, add the package names it lists to that attribute.
+If the letters look wrong, check, in this order: **Input** mode, **Flip hand**, and the order of the labels.
 
 ### Tuning
 
-The thresholds are constants at the top of `utils/SignRecognizer.kt` (`SPEAK_THRESHOLD`, `HAND_GONE_MS`, `MIN_FRAMES`, ...). The face landmarker is heavy: the on-screen `fps · ms` line shows the real speed. The model was trained on video at roughly 15-30 frames per second; if the tablet manages much less, accuracy drops.
+The thresholds are constants at the top of `utils/SignRecognizer.kt` (`LETTER_THRESHOLD`, `HOLD_MS`, `REPEAT_MS`, `WORD_GAP_MS`, ...). The on-screen `fps · ms` line shows the real speed (pose model plus classifier).
 
 ## IAQ score
 
@@ -267,9 +267,8 @@ app/src/main/java/com/example/iaqieqmornitoring/
     ├── ApproachController.kt  walks temi to a person using the tablet camera (distance from shoulder width)
     ├── PoseDetector.kt        MoveNet Lightning (ONNX Runtime)
     ├── GestureDetectors.kt    raised-hand and T-pose detectors
-    ├── SignRecognizer.kt      sign recording / accept / speak logic (Sign Language tab)
-    ├── SignLandmarkExtractor.kt  MediaPipe Holistic -> 543 landmarks
-    ├── SignClassifier.kt      TFLite sign model
+    ├── SignRecognizer.kt      hand crop, letters to words, speaking (Sign Language tab)
+    ├── SignClassifier.kt      TFLite alphabet classifier
     ├── StartupChecks.kt       startup self-checks
     └── IAQCalculator.kt / IAQConfig.kt   scoring
 docs/pi_sensor_publisher_example.py

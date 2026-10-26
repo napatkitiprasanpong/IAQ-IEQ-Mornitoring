@@ -68,7 +68,7 @@ object MissionManager {
     private val _state = MutableStateFlow(MissionState())
     val state: StateFlow<MissionState> = _state.asStateFlow()
 
-    private sealed class NavResult {
+    internal sealed class NavResult {
         object Arrived : NavResult()
         data class Failed(val reason: String) : NavResult()
     }
@@ -77,6 +77,7 @@ object MissionManager {
     @Synchronized
     fun start(routeName: String): String? {
         if (_state.value.isActive) return reject("A mission is already running")
+        if (RoutineManager.state.value.isMoving) return reject("A routine is running — stop it first")
 
         val route = AppSettings.routes.value.firstOrNull { it.name == routeName }
             ?: return reject("Route \"$routeName\" does not exist")
@@ -204,7 +205,7 @@ object MissionManager {
         }
     }
 
-    private suspend fun navigate(location: String, timeoutMs: Long): NavResult = coroutineScope {
+    internal suspend fun navigate(location: String, timeoutMs: Long): NavResult = coroutineScope {
         // Subscribe to temi's go-to events BEFORE sending the command so the result can't be missed.
         val waiter = async(start = CoroutineStart.UNDISPATCHED) {
             withTimeoutOrNull(timeoutMs) {

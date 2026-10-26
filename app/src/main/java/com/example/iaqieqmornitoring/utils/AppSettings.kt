@@ -92,6 +92,10 @@ object AppSettings {
     /** Camera focal length in image widths x 1000 (set by the Calibrate button). 785 = a 65 degree wide lens. */
     val approachFocalPermille = Setting("approach_focal_permille", 785)
 
+    // ---- Sign Language tab ----
+    /** How the alphabet model expects pixel values: 0 = 0..1, 1 = -1..1, 2 = 0..255 (see SignClassifier). */
+    val signInputMode = Setting("sign_input_mode", 0)
+
     // ---- routines (Routine tab) ----
     /** Minutes temi waits at home base before coming back after "Come back in N mins". */
     val routineSnoozeMinutes = Setting("routine_snooze_min", 5)
@@ -121,7 +125,7 @@ object AppSettings {
 
         listOf(
             simulateRobot, selectedRoute, dwellSeconds, arrivalTimeoutSeconds, retries,
-            homeBase, returnHome, raiseHandFollowEnabled, raiseHandFollowSeconds, findPersonEnabled, approachEnabled, approachThenFollow, approachStopDistanceCm, approachInvertTurn, approachFocalPermille, routineSnoozeMinutes, routinePromptTimeoutSeconds, simulateSensors, mqttHost, mqttPort, mqttTopic, mqttUser, mqttPass
+            homeBase, returnHome, raiseHandFollowEnabled, raiseHandFollowSeconds, findPersonEnabled, approachEnabled, approachThenFollow, approachStopDistanceCm, approachInvertTurn, approachFocalPermille, signInputMode, routineSnoozeMinutes, routinePromptTimeoutSeconds, simulateSensors, mqttHost, mqttPort, mqttTopic, mqttUser, mqttPass
         ).forEach { it.load(p) }
 
         p.getString(KEY_ROUTES, null)?.let { _routes.value = routesFromJson(it) }
