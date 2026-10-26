@@ -317,5 +317,3 @@ docs/pi\_sensor\_publisher\_example.py
 * The sensor connection is not encrypted (plain MQTT on a local network).
 * Test the first missions and routines with the robot in a clear area and keep the Stop button within reach.
 
-bla bla bla
-
