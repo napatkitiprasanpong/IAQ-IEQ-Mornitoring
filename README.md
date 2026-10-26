@@ -226,9 +226,9 @@ Code: `screens/SignLanguageScreen.kt` (UI), `utils/SignRecognizer.kt` (hand crop
 |-|-|
 |`movenet\_lightning.onnx` (9.4 MB)|pose model (Camera \& Depth tab and hand finding here). Already in the project.|
 |`asl\_alphabet.tflite`|**you add this**: an ASL alphabet image classifier.|
-|`asl\_alphabet\_labels.txt`|optional: one label per line, in the model's output order.|
+|`asl\_alphabet\_labels.txt`|optional: one label per line, in the model's output order. (The name must not end in `.txt.txt`; Windows hides the first `.txt`.)|
 
-Requirements for the alphabet model: input `\[1, height, width, 3]` (RGB, float32 or uint8), output `\[1, classes]` (probabilities or logits, float or quantised). Size and types are read from the file. Without the labels file, **26 outputs are read as A-Z** and **29 outputs as A-Z, del, nothing, space** (the order of the Kaggle "ASL Alphabet" dataset); any other size needs the labels file. Label names `nothing`/`blank`/`none`/`background` are ignored, `space` ends a word and `del`/`delete` removes a letter. If the file is missing the tab says so.
+Requirements for the alphabet model: input `\[1, height, width, 3]` (RGB) or `\[1, height, width, 1]` (grayscale, e.g. 64x64), float32 or uint8, output `\[1, classes]` (probabilities or logits, float or quantised). Size and types are read from the file. Without the labels file, **26 outputs are read as A-Z**, **27 as A-Z + nothing** and **29 outputs as A-Z, del, nothing, space** (the order of the Kaggle "ASL Alphabet" dataset); any other size needs the labels file. Label names `nothing`/`blank`/`none`/`background` are ignored, `space` ends a word and `del`/`delete` removes a letter. If the file is missing the tab says so.
 
 If the letters look wrong, check, in this order: **Input** mode, **Flip hand**, and the order of the labels.
 
@@ -297,6 +297,7 @@ docs/pi\_sensor\_publisher\_example.py
 |-|-|
 |Startup: "MQTT Connection" red|Pi's IP/port correct? Mosquitto running and listening on 1883 for other hosts? Tablet and Pi on the same network?|
 |MQTT connected but "Sensor Communication" red|The Pi is not publishing to the configured topic. Test with `mosquitto\_sub -h <pi-ip> -t 'iaq/#' -v`.|
+|MQTT connected, sensors red|Settings → Raspberry Pi Sensors now shows how many messages arrived, the last topic and payload, and why a message was rejected. The app listens to both `<topic>` and `<topic>/#`.|
 |"Air Quality Sensors" amber, some missing|The JSON is missing those keys or uses unrecognised names.|
 |"Robot Navigation" red|The app is not running on a temi, or the temi SDK is not connected. Use the simulated robot for testing elsewhere.|
 |"Robot Navigation" amber: no saved locations|Save locations on temi, then use Settings → Refresh locations from temi.|

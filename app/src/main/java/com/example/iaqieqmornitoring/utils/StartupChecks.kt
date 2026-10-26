@@ -50,7 +50,7 @@ fun rememberStartupChecks(): List<CheckResult> {
     // 2. Data actually arriving
     val ageSec = if (sensor.timestampMs == 0L) -1L else (now - sensor.timestampMs) / 1000
     val comms = when {
-        ageSec < 0 -> CheckResult("Sensor Communication", CheckState.FAIL, "No data received yet")
+        ageSec < 0 -> CheckResult("Sensor Communication", CheckState.FAIL, noDataReason(link))
         ageSec <= 15 -> CheckResult("Sensor Communication", CheckState.OK, "Last data ${ageSec}s ago")
         else -> CheckResult("Sensor Communication", CheckState.FAIL, "No data for ${ageSec}s")
     }
@@ -60,7 +60,7 @@ fun rememberStartupChecks(): List<CheckResult> {
     val reporting = link.fields.size
     val missing = SensorRepository.ALL_FIELDS.filter { it !in link.fields }
     val sensors = when {
-        reporting == 0 -> CheckResult("Air Quality Sensors", CheckState.FAIL, "No sensors reporting")
+        reporting == 0 -> CheckResult("Air Quality Sensors", CheckState.FAIL, if (link.problem.isNotEmpty()) link.problem else "No sensors reporting")
         reporting >= total -> CheckResult("Air Quality Sensors", CheckState.OK, "$total/$total sensors reporting")
         else -> CheckResult(
             "Air Quality Sensors", CheckState.WARN,
@@ -86,6 +86,16 @@ fun rememberStartupChecks(): List<CheckResult> {
     }
 
     return listOf(mqtt, comms, sensors, battery, navigation, storage)
+}
+
+/** Tells apart "the Pi sends nothing on this topic" from "it sends something the app cannot read". */
+private fun noDataReason(link: SensorLinkState): String = when {
+    link.mode != SensorMode.MQTT -> "No data received yet"
+    !link.connected -> "Not connected to the Pi yet"
+    link.messages == 0 ->
+        "Connected, but nothing arrived on '${AppSettings.mqttTopic.value.trim()}'. " +
+            "On the Pi run: mosquitto_sub -t 'iaq/#' -v (is the publisher script running, and which topic does it use?)"
+    else -> "Messages arrive (${link.messages}) but none usable: ${link.problem.ifEmpty { "unknown" }}. Last: ${link.lastTopic} ${link.lastPayload}"
 }
 
 private fun storageCheck(): CheckResult {

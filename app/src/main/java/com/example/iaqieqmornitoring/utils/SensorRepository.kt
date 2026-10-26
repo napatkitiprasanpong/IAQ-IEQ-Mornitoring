@@ -35,7 +35,15 @@ data class SensorLinkState(
     val connecting: Boolean = false,
     val detail: String = "Not started",
     /** Sensor names (see [SensorRepository.ALL_FIELDS]) that have been reported so far. */
-    val fields: Set<String> = emptySet()
+    val fields: Set<String> = emptySet(),
+    /** MQTT messages received since connecting (usable or not). */
+    val messages: Int = 0,
+    /** Topic of the last message received. */
+    val lastTopic: String = "",
+    /** Start of the last message received (shortened), to see what the Pi really sends. */
+    val lastPayload: String = "",
+    /** Why the last message could not be used, empty if it was fine. */
+    val problem: String = ""
 )
 
 object SensorRepository {

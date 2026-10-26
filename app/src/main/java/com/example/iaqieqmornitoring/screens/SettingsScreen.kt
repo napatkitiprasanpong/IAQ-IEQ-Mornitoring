@@ -345,6 +345,17 @@ private fun SensorLinkCard() {
             }
         )
 
+        if (!simulate && link.connected) {
+            Text(
+                if (link.messages == 0) "No message received yet on this topic."
+                else "Messages: ${link.messages} · last topic: ${link.lastTopic}\n" +
+                    "Last payload: ${link.lastPayload}" +
+                    (if (link.problem.isNotEmpty()) "\nProblem: ${link.problem}" else "\nSensors seen: ${link.fields.size}/${SensorRepository.ALL_FIELDS.size}"),
+                color = if (link.problem.isNotEmpty() || link.messages == 0) ColorWarn else ColorMuted,
+                fontSize = 11.sp
+            )
+        }
+
         ToggleRow("Simulated sensors (for testing without the Pi)", simulate) {
             AppSettings.simulateSensors.set(it)
             SensorRepository.applySettings()

@@ -16,14 +16,14 @@ class SignPrediction(val label: String, val confidence: Float)
 /**
  * Runs an ASL alphabet image classifier (assets/asl_alphabet.tflite) on a cropped picture of one hand.
  *
- * Works with the usual MobileNet-style models: input [1, height, width, 3] (RGB, float32 or uint8),
- * output [1, classes] (float32 or quantised, probabilities or logits). Size and types are read from the
+ * Works with MobileNet-style models (input [1, height, width, 3], RGB) and with small grayscale CNNs
+ * (input [1, height, width, 1], e.g. 64x64), float32 or uint8. Output [1, classes] (float32 or quantised, probabilities or logits). Size and types are read from the
  * file. What cannot be read from a .tflite file is how the pixels were scaled during training, so
  * [classify] takes an input mode (see [INPUT_ZERO_ONE] and friends); the Sign Language tab has a pill
  * to switch it. A model with uint8 input ignores the mode.
  *
  * Labels come from assets/asl_alphabet_labels.txt (one label per line, in output order). Without that
- * file, 26 outputs are read as A-Z, and 29 outputs as A-Z, del, nothing, space (the Kaggle "ASL Alphabet"
+ * file, 26 outputs are read as A-Z, 27 as A-Z + nothing, and 29 outputs as A-Z, del, nothing, space (the Kaggle "ASL Alphabet"
  * dataset order). Anything else needs the labels file.
  *
  * Does not use MediaPipe, so it runs on Android 5.0+ (TensorFlow Lite's minimum). Not thread-safe.
@@ -44,6 +44,9 @@ class SignClassifier(context: Context) : AutoCloseable {
     val inputWidth: Int
     val inputHeight: Int
 
+    /** 1 = grayscale model, 3 = RGB model. */
+    val inputChannels: Int
+
     init {
         val options = Interpreter.Options().setNumThreads(2)
         interpreter = try {
@@ -62,11 +65,12 @@ class SignClassifier(context: Context) : AutoCloseable {
 
         val inTensor = interpreter.getInputTensor(0)
         val inShape = inTensor.shape()
-        check(inShape.size == 4 && inShape[0] == 1 && inShape[3] == 3) {
-            "Unexpected model input shape ${inShape.joinToString("x")}, expected 1 x height x width x 3 (RGB)"
+        check(inShape.size == 4 && inShape[0] == 1 && (inShape[3] == 3 || inShape[3] == 1)) {
+            "Unexpected model input shape ${inShape.joinToString("x")}, expected 1 x height x width x 1 (grayscale) or x 3 (RGB)"
         }
         inputHeight = inShape[1]
         inputWidth = inShape[2]
+        inputChannels = inShape[3]
         inType = inTensor.dataType()
         check(inType == DataType.FLOAT32 || inType == DataType.UINT8) {
             "Unsupported model input type $inType (float32 or uint8 expected)"
@@ -99,11 +103,16 @@ class SignClassifier(context: Context) : AutoCloseable {
         crop.getPixels(pixels, 0, inputWidth, 0, 0, inputWidth, inputHeight)
 
         inputBuffer.rewind()
+        val gray = inputChannels == 1
         for (p in pixels) {
             val r = (p shr 16) and 0xFF
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
-            if (inType == DataType.FLOAT32) {
+            if (gray) {
+                // Luminance (same weights as OpenCV / PIL "L"), for models trained on grayscale pictures
+                val y = ((299 * r + 587 * g + 114 * b) / 1000).coerceIn(0, 255)
+                if (inType == DataType.FLOAT32) inputBuffer.putFloat(scale(y, mode)) else inputBuffer.put(y.toByte())
+            } else if (inType == DataType.FLOAT32) {
                 inputBuffer.putFloat(scale(r, mode)); inputBuffer.putFloat(scale(g, mode)); inputBuffer.putFloat(scale(b, mode))
             } else {
                 inputBuffer.put(r.toByte()); inputBuffer.put(g.toByte()); inputBuffer.put(b.toByte())
@@ -160,19 +169,22 @@ class SignClassifier(context: Context) : AutoCloseable {
     companion object {
         const val MODEL_ASSET = "asl_alphabet.tflite"
         const val LABELS_ASSET = "asl_alphabet_labels.txt"
+        /** Windows hides known extensions, so the file often ends up with this name by accident. */
+        private const val LABELS_ASSET_ALT = "asl_alphabet_labels.txt.txt"
 
         const val INPUT_ZERO_ONE = 0        // pixel / 255                (most Keras models trained on rescaled images)
         const val INPUT_MINUS_ONE_ONE = 1   // pixel / 127.5 - 1          (MobileNet preprocess_input)
         const val INPUT_RAW_255 = 2         // pixel as is, 0..255        (model rescales inside itself)
 
         private fun loadLabels(context: Context, outputs: Int): List<String> {
-            val fromFile = try {
-                context.assets.open(LABELS_ASSET).bufferedReader().use { r ->
-                    r.readLines().map { it.trim() }.filter { it.isNotEmpty() }
+            fun read(name: String): List<String>? = try {
+                context.assets.open(name).bufferedReader().use { r ->
+                    r.readLines().map { it.trim().trimStart('\uFEFF') }.filter { it.isNotEmpty() }
                 }
             } catch (e: java.io.IOException) {
                 null
             }
+            val fromFile = read(LABELS_ASSET) ?: read(LABELS_ASSET_ALT)
             if (fromFile != null) {
                 check(fromFile.size == outputs) {
                     "$LABELS_ASSET has ${fromFile.size} labels but the model has $outputs outputs"
@@ -182,6 +194,7 @@ class SignClassifier(context: Context) : AutoCloseable {
             val letters = ('A'..'Z').map { it.toString() }
             return when (outputs) {
                 26 -> letters
+                27 -> letters + listOf("nothing")
                 29 -> letters + listOf("del", "nothing", "space")
                 else -> error("The model has $outputs outputs. Add $LABELS_ASSET (one label per line) to app/src/main/assets.")
             }
