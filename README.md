@@ -75,9 +75,18 @@ Units: °C, %, ppm, µg/m³ (PM), mg/m³ (TVOC, HCHO), lux, dB.
 ### 4. Configure the app
 Open **Settings**:
 
-1. **Raspberry Pi Sensors:** enter the Pi's IP address, port (1883) and topic, then tap **Save & Reconnect**.
+1. **Raspberry Pi Sensors:** the Pi's address is pre-filled as `10.2.115.198` (change it here if the Pi gets a different address), then check the port (1883) and topic and tap **Save & Reconnect**. The default lives in `DEFAULT_PI_HOST` in `utils/AppSettings.kt`; an older saved value of `raspberrypi.local` is replaced by it.
 2. **Routes & Locations:** choose a route, then add temi's saved locations in the order they should be visited.
-3. **temi Robot & Mission:** set the sampling time per stop, the navigation timeout, retries, home base name, and whether to return home at the end.
+3. **temi Robot & Mission:** set the sampling time per stop, the navigation timeout, retries, home base name, whether to return home at the end, and **Start this app automatically when temi starts** (see below).
+
+#### Starting the app automatically
+
+Switch on **Start this app automatically when temi starts** (Settings → temi Robot & Mission). It does two things:
+
+- It registers the app as temi's **start-up (kiosk) app** through the temi SDK (`requestToBeKioskApp`). temi may show a confirmation on its screen; accept it. Under the switch the app shows whether temi's launcher has this app selected. This is the route that also works on newer Android versions.
+- It makes the app open itself when the tablet finishes booting (a boot receiver). On Android 10 and newer, Android blocks apps from opening screens in the background, so this part may do nothing there. The tablet in this project runs Android 6, where it works.
+
+Turn the switch off to stop the boot receiver. If temi's launcher keeps opening the app, change the start-up app in temi's own settings. Test it once by restarting temi.
 
 Check the **Startup** screen: every card should be green.
 

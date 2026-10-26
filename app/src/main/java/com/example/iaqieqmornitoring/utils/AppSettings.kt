@@ -12,6 +12,9 @@ import org.json.JSONObject
 /** One inspection route: an ordered list of temi saved-location names. */
 data class MissionRoute(val name: String, val waypoints: List<String>)
 
+/** IP address of the Raspberry Pi that publishes the sensor readings over MQTT. */
+const val DEFAULT_PI_HOST = "10.2.115.198"
+
 const val DEFAULT_ROUTINE_MESSAGE = "Please drink water"
 
 /**
@@ -57,7 +60,9 @@ class Setting<T : Any>(val key: String, val default: T) {
 
 object AppSettings {
 
-    private const val PREFS_NAME = "iaq_ieq_settings"
+    const val PREFS_NAME = "iaq_ieq_settings"
+    /** Key of [autoStart] in the preferences file, read by BootReceiver before the app has started. */
+    const val KEY_AUTO_START = "auto_start"
     private const val KEY_ROUTES = "routes_json"
     private const val KEY_ROUTINES = "routines_json"
 
@@ -92,6 +97,10 @@ object AppSettings {
     /** Camera focal length in image widths x 1000 (set by the Calibrate button). 785 = a 65 degree wide lens. */
     val approachFocalPermille = Setting("approach_focal_permille", 785)
 
+    // ---- start-up ----
+    /** Start this app by itself when temi (the tablet) starts. */
+    val autoStart = Setting(KEY_AUTO_START, false)
+
     // ---- Sign Language tab ----
     /** How the alphabet model expects pixel values: 0 = 0..1, 1 = -1..1, 2 = 0..255 (see SignClassifier). */
     val signInputMode = Setting("sign_input_mode", 0)
@@ -104,7 +113,7 @@ object AppSettings {
 
     // ---- Raspberry Pi sensor link ----
     val simulateSensors = Setting("simulate_sensors", false)
-    val mqttHost = Setting("mqtt_host", "raspberrypi.local")
+    val mqttHost = Setting("mqtt_host", DEFAULT_PI_HOST)
     val mqttPort = Setting("mqtt_port", 1883)
     val mqttTopic = Setting("mqtt_topic", "iaq/sensors")
     val mqttUser = Setting("mqtt_user", "")
@@ -125,8 +134,11 @@ object AppSettings {
 
         listOf(
             simulateRobot, selectedRoute, dwellSeconds, arrivalTimeoutSeconds, retries,
-            homeBase, returnHome, raiseHandFollowEnabled, raiseHandFollowSeconds, findPersonEnabled, approachEnabled, approachThenFollow, approachStopDistanceCm, approachInvertTurn, approachFocalPermille, signInputMode, routineSnoozeMinutes, routinePromptTimeoutSeconds, simulateSensors, mqttHost, mqttPort, mqttTopic, mqttUser, mqttPass
+            homeBase, returnHome, raiseHandFollowEnabled, raiseHandFollowSeconds, findPersonEnabled, approachEnabled, approachThenFollow, approachStopDistanceCm, approachInvertTurn, approachFocalPermille, signInputMode, autoStart, routineSnoozeMinutes, routinePromptTimeoutSeconds, simulateSensors, mqttHost, mqttPort, mqttTopic, mqttUser, mqttPass
         ).forEach { it.load(p) }
+
+        // Earlier versions defaulted to the host name below; the Pi now has a fixed address.
+        if (mqttHost.value.trim() == "raspberrypi.local") mqttHost.set(DEFAULT_PI_HOST)
 
         p.getString(KEY_ROUTES, null)?.let { _routes.value = routesFromJson(it) }
         p.getString(KEY_ROUTINES, null)?.let { _routines.value = routinesFromJson(it) }

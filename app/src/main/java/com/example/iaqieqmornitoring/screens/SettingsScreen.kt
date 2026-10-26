@@ -115,6 +115,8 @@ private fun RobotCard() {
     val retries by AppSettings.retries.flow.collectAsState()
     val homeBase by AppSettings.homeBase.flow.collectAsState()
     val returnHome by AppSettings.returnHome.flow.collectAsState()
+    val autoStart by AppSettings.autoStart.flow.collectAsState()
+    var kioskNote by remember { mutableStateOf<String?>(null) }
     val mission by MissionManager.state.collectAsState()
 
     SectionCard("temi Robot & Mission") {
@@ -142,6 +144,18 @@ private fun RobotCard() {
         Stepper("Retries when navigation fails", retries, { AppSettings.retries.set(it) }, 0, 5, 1, "")
 
         ToggleRow("Return to home base after the mission", returnHome) { AppSettings.returnHome.set(it) }
+
+        ToggleRow("Start this app automatically when temi starts", autoStart) { on ->
+            AppSettings.autoStart.set(on)
+            kioskNote = if (on) {
+                // Also ask temi's launcher to open this app at start-up (temi shows a confirmation).
+                if (TemiRepository.requestKioskApp()) "Confirm on temi's screen if it asks."
+                else "Saved. Connect to temi and switch this on again to also register with temi's launcher."
+            } else null
+        }
+        (kioskNote ?: TemiRepository.isKioskApp()?.let {
+            if (it) "temi's launcher will open this app when it starts." else "Not registered as temi's start-up app yet."
+        })?.let { Text(it, color = ColorMuted, fontSize = 12.sp) }
 
         LabeledField(
             label = "Home base location name",

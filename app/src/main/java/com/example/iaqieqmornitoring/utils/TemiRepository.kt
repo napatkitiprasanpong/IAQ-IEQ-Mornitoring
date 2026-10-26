@@ -233,6 +233,32 @@ object TemiRepository : OnRobotReadyListener,
         }
     }
 
+    /**
+     * Asks temi to make this app its start-up ("kiosk") app, so the launcher opens it when temi starts.
+     * temi may show a confirmation on its screen. Returns false if the robot is not connected.
+     */
+    fun requestKioskApp(): Boolean {
+        if (_state.value.simulated) return false
+        val robot = robotOrNull() ?: return false
+        if (!_state.value.ready) return false
+        return try {
+            robot.requestToBeKioskApp()
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** True/false if temi says whether this app is its start-up app, null if unknown (not connected). */
+    fun isKioskApp(): Boolean? {
+        if (_state.value.simulated || !_state.value.ready) return null
+        return try {
+            robotOrNull()?.isSelectedKioskApp()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     /** Speaks text using temi TTS engine. */
     fun speak(text: String, showOnScreen: Boolean = false) {
         if (text.isBlank()) return
