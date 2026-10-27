@@ -215,14 +215,14 @@ object SensorPayload {
     /** Key names are compared in lower case with everything except letters and digits removed ("PM2.5" == "pm2_5"). */
     private val aliases: List<Pair<String, Set<String>>> = listOf(
         "TEMP" to setOf("temp", "temperature", "tempc", "temperaturec", "ambienttemp", "airtemp", "t"),
-        "HUMIDITY" to setOf("humidity", "humid", "rh", "hum", "relativehumidity", "humiditypct", "humidityrh"),
+        "HUMIDITY" to setOf("humidity", "humid", "rh", "hum", "relativehumidity", "humiditypct", "humidityrh", "rhpct", "rhpercent", "humiditypercent"),
         "CO2" to setOf("co2", "eco2", "co2ppm", "carbondioxide"),
         "PM2.5" to setOf("pm25", "pm2", "pm25ugm3", "pm25atm", "pm25std", "pm25standard"),
         "PM10" to setOf("pm10", "pm10ugm3", "pm10atm", "pm10std", "pm10standard"),
         "TVOC" to setOf("tvoc", "voc", "tvocppb", "tvocmgm3"),
         "HCHO" to setOf("hcho", "formaldehyde", "ch2o", "hchomgm3"),
         "LIGHT" to setOf("light", "lux", "illuminance", "ambientlight", "lightlux"),
-        "SOUND" to setOf("sound", "noise", "db", "noisedb", "soundlevel", "decibel", "sounddb")
+        "SOUND" to setOf("sound", "noise", "db", "dba", "dbspl", "noisedb", "soundlevel", "decibel", "sounddb", "noisedba")
     )
 
     private val byKey: Map<String, String> = HashMap<String, String>().apply {
