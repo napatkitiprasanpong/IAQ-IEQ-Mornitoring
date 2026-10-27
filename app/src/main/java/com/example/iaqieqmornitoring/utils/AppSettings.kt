@@ -30,7 +30,11 @@ data class Routine(
     val routeName: String,
     val message: String = DEFAULT_ROUTINE_MESSAGE,
     val enabled: Boolean = true,
-    val lastRunDay: String = ""
+    val lastRunDay: String = "",
+    /** FREE_STYLE = the original reminder routine; IAQ_IEQ = collect sensor data at every stop. */
+    val type: RoutineType = RoutineType.FREE_STYLE,
+    /** IAQ_IEQ only: how long and how often to sample at each stop, in route order. */
+    val plans: List<StopPlan> = emptyList()
 ) {
     val minuteOfDay: Int get() = hour * 60 + minute
 }
@@ -111,6 +115,12 @@ object AppSettings {
     /** Seconds the popup waits for an answer; no answer is treated like "Come back in N mins". */
     val routinePromptTimeoutSeconds = Setting("routine_prompt_timeout_s", 60)
 
+    // ---- Google Sheets upload (IAQ-IEQ routine) ----
+    /** URL of the deployed Google Apps Script web app (see apps_script/Code.gs). */
+    val sheetsUrl = Setting("sheets_url", "")
+    /** Shared secret; must equal SECRET in the Apps Script. */
+    val sheetsToken = Setting("sheets_token", "")
+
     // ---- Raspberry Pi sensor link ----
     val simulateSensors = Setting("simulate_sensors", false)
     val mqttHost = Setting("mqtt_host", DEFAULT_PI_HOST)
@@ -134,7 +144,7 @@ object AppSettings {
 
         listOf(
             simulateRobot, selectedRoute, dwellSeconds, arrivalTimeoutSeconds, retries,
-            homeBase, returnHome, raiseHandFollowEnabled, raiseHandFollowSeconds, findPersonEnabled, approachEnabled, approachThenFollow, approachStopDistanceCm, approachInvertTurn, approachFocalPermille, signInputMode, autoStart, routineSnoozeMinutes, routinePromptTimeoutSeconds, simulateSensors, mqttHost, mqttPort, mqttTopic, mqttUser, mqttPass
+            homeBase, returnHome, raiseHandFollowEnabled, raiseHandFollowSeconds, findPersonEnabled, approachEnabled, approachThenFollow, approachStopDistanceCm, approachInvertTurn, approachFocalPermille, signInputMode, autoStart, routineSnoozeMinutes, routinePromptTimeoutSeconds, simulateSensors, mqttHost, mqttPort, mqttTopic, mqttUser, mqttPass, sheetsUrl, sheetsToken
         ).forEach { it.load(p) }
 
         // Earlier versions defaulted to the host name below; the Pi now has a fixed address.
@@ -181,6 +191,18 @@ object AppSettings {
                     .put("hour", r.hour).put("minute", r.minute)
                     .put("route", r.routeName).put("message", r.message)
                     .put("enabled", r.enabled).put("lastRunDay", r.lastRunDay)
+                    .put("type", r.type.name)
+                    .put(
+                        "plans",
+                        JSONArray().also { pa ->
+                            r.plans.forEach { p ->
+                                pa.put(
+                                    JSONObject().put("location", p.location)
+                                        .put("duration", p.durationS).put("interval", p.intervalS)
+                                )
+                            }
+                        }
+                    )
             )
         }
         return arr.toString()
@@ -201,7 +223,13 @@ object AppSettings {
                         routeName = o.optString("route", ""),
                         message = o.optString("message", DEFAULT_ROUTINE_MESSAGE).ifBlank { DEFAULT_ROUTINE_MESSAGE },
                         enabled = o.optBoolean("enabled", true),
-                        lastRunDay = o.optString("lastRunDay", "")
+                        lastRunDay = o.optString("lastRunDay", ""),
+                        type = try {
+                            RoutineType.valueOf(o.optString("type", RoutineType.FREE_STYLE.name))
+                        } catch (e: IllegalArgumentException) {
+                            RoutineType.FREE_STYLE
+                        },
+                        plans = plansFromJson(o.optJSONArray("plans"))
                     )
                 )
             }
@@ -209,6 +237,18 @@ object AppSettings {
         } catch (e: Exception) {
             emptyList()
         }
+    }
+
+    private fun plansFromJson(arr: JSONArray?): List<StopPlan> {
+        if (arr == null) return emptyList()
+        val out = ArrayList<StopPlan>()
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val d = o.optInt("duration", DEFAULT_DURATION_S).coerceAtLeast(1)
+            val iv = o.optInt("interval", DEFAULT_INTERVAL_S).coerceIn(1, d)
+            out.add(StopPlan(o.optString("location", ""), d, iv))
+        }
+        return out
     }
 
     private fun defaultRoutes() = listOf(

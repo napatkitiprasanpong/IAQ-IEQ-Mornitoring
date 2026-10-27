@@ -13,13 +13,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-enum class RoutinePhase { IDLE, GOING, ASKING, RETURNING, WAITING, DONE, STOPPED, FAILED }
+enum class RoutinePhase { IDLE, GOING, ASKING, SAMPLING, RETURNING, WAITING, UPLOADING, DONE, STOPPED, FAILED }
 
 enum class PromptAnswer { YES, SNOOZE, NO_ANSWER }
 
@@ -48,11 +49,13 @@ data class RoutineState(
     /** A routine is in progress, including the time temi waits at home base for a timer. */
     val isActive: Boolean
         get() = phase == RoutinePhase.GOING || phase == RoutinePhase.ASKING ||
-            phase == RoutinePhase.RETURNING || phase == RoutinePhase.WAITING
+            phase == RoutinePhase.SAMPLING || phase == RoutinePhase.RETURNING ||
+            phase == RoutinePhase.WAITING || phase == RoutinePhase.UPLOADING
 
-    /** temi is driving or standing at a stop talking to someone (not just waiting at home base). */
+    /** temi is driving or standing at a stop (talking to someone or collecting data), not just waiting at home base. */
     val isMoving: Boolean
-        get() = phase == RoutinePhase.GOING || phase == RoutinePhase.ASKING || phase == RoutinePhase.RETURNING
+        get() = phase == RoutinePhase.GOING || phase == RoutinePhase.ASKING ||
+            phase == RoutinePhase.SAMPLING || phase == RoutinePhase.RETURNING
 }
 
 /** What the popup shows. */
@@ -213,6 +216,10 @@ object RoutineManager {
         val pending = mutableListOf<TempMission>()
 
         try {
+            if (r.type == RoutineType.IAQ_IEQ) {
+                runIaqRoutine(r, route, timeoutMs, retries)
+                return
+            }
             TemiRepository.speak("Starting routine ${r.name}")
 
             // ---- the mission itself: visit every stop in order ----
@@ -303,6 +310,108 @@ object RoutineManager {
                 )
             }
         }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // IAQ-IEQ routine: drive to each stop, collect sensor data, save it locally, move on.
+    // After the last stop temi returns to home base and the data is uploaded to Google Sheets.
+    // ------------------------------------------------------------------------------------------
+
+    private suspend fun runIaqRoutine(r: Routine, route: MissionRoute, timeoutMs: Long, retries: Int) {
+        val startedAt = System.currentTimeMillis()
+        val runId = IaqDataStore.runId(startedAt, r.name)
+        val file = withContext(Dispatchers.IO) { IaqDataStore.newRunFile(runId) }
+        val total = route.waypoints.size
+        var sampledStops = 0
+        var staleRows = 0
+
+        for ((i, location) in route.waypoints.withIndex()) {
+            val plan = r.plans.getOrNull(i)?.takeIf { it.location.equals(location, ignoreCase = true) }
+                ?: StopPlan(location, DEFAULT_DURATION_S, DEFAULT_INTERVAL_S)
+
+            if (!reach(location, "(${i + 1}/$total)", timeoutMs, retries)) continue
+
+            val rows = sampleStop(r, runId, plan)
+            // Saved on the tablet before temi drives on, so nothing is lost if the routine is stopped later.
+            withContext(Dispatchers.IO) { IaqDataStore.appendRows(file, rows) }
+            sampledStops++
+            staleRows += rows.count { it[16] == "false" }
+            addLog("$location: ${rows.size} readings saved (every ${secondsLabel(plan.intervalS)} for ${secondsLabel(plan.durationS)})")
+        }
+
+        goHome(timeoutMs)
+
+        withContext(Dispatchers.IO) { IaqDataStore.discardIfEmpty(file) }
+        if (sampledStops == 0) {
+            addLog("No stop could be sampled, nothing to upload")
+            _state.update {
+                it.copy(phase = RoutinePhase.DONE, currentLocation = "", message = "IAQ-IEQ routine finished, but no stop could be reached.")
+            }
+            return
+        }
+        if (staleRows > 0) addLog("Warning: $staleRows reading(s) were taken while no fresh sensor data was arriving")
+
+        setPhase(RoutinePhase.UPLOADING, "", "Uploading to Google Sheets…")
+        val upload = SheetsUploader.uploadPending()
+        addLog(upload.message)
+        _state.update {
+            it.copy(
+                phase = RoutinePhase.DONE,
+                currentLocation = "",
+                message = "IAQ-IEQ routine complete — $sampledStops/$total stops sampled. ${upload.message}"
+            )
+        }
+    }
+
+    /** Drive to [location] (with retries). Returns false, and logs why, if temi cannot get there. */
+    private suspend fun reach(location: String, label: String, timeoutMs: Long, retries: Int): Boolean {
+        setPhase(RoutinePhase.GOING, location, "Going to $location $label")
+        var nav: MissionManager.NavResult = MissionManager.NavResult.Failed("not attempted")
+        var attempt = 0
+        while (attempt <= retries) {
+            nav = MissionManager.navigate(location, timeoutMs)
+            if (nav is MissionManager.NavResult.Arrived) break
+            attempt++
+            if (attempt <= retries) _state.update { it.copy(message = "Retrying $location ($attempt/$retries)…") }
+        }
+        val failed = nav as? MissionManager.NavResult.Failed
+        if (failed != null) {
+            addLog("Could not reach $location: ${failed.reason} — skipped")
+            return false
+        }
+        return true
+    }
+
+    /**
+     * Reads the sensors every [StopPlan.intervalS] seconds for [StopPlan.durationS] seconds.
+     * The first reading is taken one interval after arriving and the last one when the duration is over,
+     * so "30 sec every 5 sec" gives 6 readings and takes 30 seconds.
+     */
+    private suspend fun sampleStop(r: Routine, runId: String, plan: StopPlan): List<List<String>> {
+        val count = plan.sampleCount
+        val intervalMs = plan.intervalS.coerceAtLeast(1) * 1000L
+        val rows = ArrayList<List<String>>(count)
+        val t0 = System.currentTimeMillis()
+        setPhase(
+            RoutinePhase.SAMPLING, plan.location,
+            "Collecting at ${plan.location}: 0/$count (every ${secondsLabel(plan.intervalS)} for ${secondsLabel(plan.durationS)})"
+        )
+        for (k in 1..count) {
+            val wait = t0 + k * intervalMs - System.currentTimeMillis()
+            if (wait > 0) delay(wait)
+            rows += IaqDataStore.row(
+                timeMs = System.currentTimeMillis(),
+                plan = plan,
+                s = SensorRepository.data.value,
+                fresh = SensorRepository.isFresh(),
+                routine = r.name,
+                runId = runId
+            )
+            _state.update {
+                it.copy(message = "Collecting at ${plan.location}: $k/$count (every ${secondsLabel(plan.intervalS)} for ${secondsLabel(plan.durationS)})")
+            }
+        }
+        return rows
     }
 
     /** Drive to [location], speak the routine's message and wait for the answer. */
