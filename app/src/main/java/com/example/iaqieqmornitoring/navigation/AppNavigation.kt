@@ -1,6 +1,8 @@
 package com.example.iaqieqmornitoring.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import com.example.iaqieqmornitoring.bridge.BridgeNav
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
@@ -11,6 +13,11 @@ import com.example.iaqieqmornitoring.screens.*
 fun AppNavigation() {
 
     val nav = rememberNavController()
+
+    // Screen changes requested by the AI/voice bridge
+    LaunchedEffect(Unit) {
+        BridgeNav.requests.collect { route -> nav.navigate(route) { popUpTo("home") } }
+    }
 
     NavHost(
         navController = nav,

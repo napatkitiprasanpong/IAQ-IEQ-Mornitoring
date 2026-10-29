@@ -5,6 +5,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.example.iaqieqmornitoring.bridge.IaqBridge
+import com.example.iaqieqmornitoring.bridge.IaqBridgeHostImpl
 import com.example.iaqieqmornitoring.navigation.AppNavigation
 import com.example.iaqieqmornitoring.ui.theme.IAQIEQMornitoringTheme
 import com.example.iaqieqmornitoring.utils.AppSettings
@@ -39,6 +41,7 @@ class MainActivity : ComponentActivity(), OnRobotReadyListener {
         }
 
         RoutineManager.startScheduler()     // runs scheduled routines while the app is open
+        IaqBridge.host = IaqBridgeHostImpl() // lets the AI/voice app (MatePet) control and read this app
 
         enableEdgeToEdge()
 
@@ -47,6 +50,11 @@ class MainActivity : ComponentActivity(), OnRobotReadyListener {
                 AppNavigation()
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (isFinishing) IaqBridge.host = null
     }
 
     override fun onStart() {

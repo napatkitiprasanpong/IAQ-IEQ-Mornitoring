@@ -263,6 +263,10 @@ In **Settings** you can switch on:
 
 The startup screen shows simulated sources in amber so they cannot be mistaken for real ones. Switch both off for real use.
 
+## Voice / AI control (MatePet)
+
+The app exposes a small signature-protected bridge so the MatePet voice app can read live air data and start or stop missions and routines by voice. See [`docs/AI_BRIDGE.md`](docs/AI_BRIDGE.md).
+
 ## Project structure
 
 ```
@@ -270,6 +274,7 @@ app/src/main/java/com/example/iaqieqmornitoring/
 ├── MainActivity.kt            starts settings, temi and sensor links
 ├── navigation/                screen routes
 ├── screens/                   Startup, Dashboard, Analytics, Detail, IAQI scale, Mission, Routine, Camera \& Depth, Sign Language, Settings
+├── bridge/                    AI/voice bridge (commands in, status out)
 ├── components/                gauges, cards, top bar, sidebar, shared form widgets, RoutinePromptHost (the routine popup)
 └── utils/
     ├── AppSettings.kt         persisted settings and routes

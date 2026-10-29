@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- AI/voice bridge: only apps signed with the same key (MatePet) get this -->
+    <permission android:name="${applicationId}.permission.BRIDGE" android:protectionLevel="signature" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Camera & Depth tab: tablet camera preview and (if the device exposes one) the depth camera -->
@@ -35,6 +38,21 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".bridge.IaqCommandReceiver"
+            android:exported="true"
+            android:permission="${applicationId}.permission.BRIDGE">
+            <intent-filter>
+                <action android:name="${applicationId}.action.COMMAND" />
+            </intent-filter>
+        </receiver>
+
+        <provider
+            android:name=".bridge.IaqStatusProvider"
+            android:authorities="${applicationId}.bridge"
+            android:exported="true"
+            android:readPermission="${applicationId}.permission.BRIDGE" />
 
         <activity
             android:name=".MainActivity"
