@@ -14,6 +14,7 @@ interface IaqBridgeHost {
     fun startRoutine(name: String?): String
     fun stopRoutine(): String
     fun openTab(tab: String): String
+    fun answer(a: String): String
     fun status(): JSONObject
 }
 
@@ -37,6 +38,7 @@ class IaqCommandReceiver : BroadcastReceiver() {
                 "START_ROUTINE" -> h.startRoutine(arg)
                 "STOP_ROUTINE" -> h.stopRoutine()
                 "OPEN_TAB" -> h.openTab(arg ?: "dashboard")
+                "ANSWER" -> h.answer(arg ?: "yes")
                 else -> "Unknown command."
             }
         }.getOrElse { "That failed: ${it.message}" })

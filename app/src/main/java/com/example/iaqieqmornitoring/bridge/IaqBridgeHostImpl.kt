@@ -45,6 +45,14 @@ class IaqBridgeHostImpl : IaqBridgeHost {
         BridgeNav.request(route); return "Opening the $tab tab."
     }
 
+    /** Answers the routine popup ("Please drink water" -> Yes / Come back in N mins) by voice. */
+    override fun answer(a: String): String {
+        if (RoutineManager.prompt.value == null) return "There is no question waiting."
+        val yes = a.lowercase().startsWith("y")
+        RoutineManager.answer(if (yes) PromptAnswer.YES else PromptAnswer.SNOOZE)
+        return if (yes) "Thank you." else "Okay, I will come back later."
+    }
+
     private fun f(x: Float) = if (x.isNaN() || x.isInfinite()) 0.0 else x.toDouble()
 
     override fun status(): JSONObject {
@@ -58,6 +66,7 @@ class IaqBridgeHostImpl : IaqBridgeHost {
             .put("mission", JSONObject().put("state", if (m.isActive) "running" else "idle").put("route", m.routeName)
                 .put("stop", (m.currentIndex + 1).coerceAtLeast(0)).put("total", m.stops.size))
             .put("routine", JSONObject().put("state", if (rt.isActive) "running" else "idle").put("phase", rt.phase.name))
+            .put("prompt", JSONObject().put("active", RoutineManager.prompt.value != null))
             .put("routes", JSONArray(AppSettings.routes.value.map { it.name }))
     }
 }
